@@ -1,0 +1,31 @@
+name: Deploy
+
+on:
+  push:
+    branches: [staging, production]
+
+jobs:
+  deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - name: Deploy to Vercel
+        # One Firebase project (surakshak-2869a) across every tier — see
+        # CLAUDE.md → "Firebase Project". Both branches pass the same
+        # FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64 secret; only APP_ENV and
+        # --prod differ.
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          if [ "$BRANCH" = "production" ]; then
+            npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }} \
+              --env APP_ENV=prod \
+              --env FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64=${{ secrets.FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64 }}
+          else
+            npx vercel --token ${{ secrets.VERCEL_TOKEN }} \
+              --env APP_ENV=staging \
+              --env FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64=${{ secrets.FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64 }}
+          fi

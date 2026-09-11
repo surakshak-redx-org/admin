@@ -4,11 +4,13 @@ import type { NextConfig } from 'next';
 // project as TS-first. Same content the Phase 9 brief specifies for
 // next.config.js, just typed.
 const nextConfig: NextConfig = {
-  // firebase-admin pulls in jwks-rsa -> jose, which ships ESM-only files;
-  // bundling it (Turbopack's default) breaks require() interop with those
-  // files at runtime. Keeping it external makes Next.js load it natively
-  // from node_modules in the deployed function instead of bundling it.
-  serverExternalPackages: ['firebase-admin'],
+  // firebase-admin is already in Next's default serverExternalPackages list,
+  // but its transitive deps jwks-rsa -> jose (ESM-only) are not, so Turbopack
+  // still traces/bundles them and breaks require() interop at runtime
+  // (ERR_REQUIRE_ESM). Marking them external too makes Next.js load them
+  // natively via Node's own require from node_modules in the deployed
+  // function, instead of bundling them.
+  serverExternalPackages: ['firebase-admin', 'jose', 'jwks-rsa'],
   images: {
     remotePatterns: [
       {

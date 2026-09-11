@@ -59,5 +59,8 @@
       "module": "commonjs",
       "moduleResolution": "node"
     }
+  },
+  "overrides": {
+    "jwks-rsa": "3.2.2"
   }
 }

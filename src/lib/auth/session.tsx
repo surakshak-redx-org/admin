@@ -38,37 +38,40 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
 
   useEffect(() => {
     const unsubscribe = clientAuth.onAuthStateChanged((firebaseUser) => {
-      const load = async (): Promise<void> => {
-        if (firebaseUser) {
-          try {
-            const token = await firebaseUser.getIdToken();
-            setIdToken(token);
+      if (!firebaseUser) {
+        setUser(null);
+        setIdToken(null);
+        setIsLoading(false);
+        return;
+      }
 
-            const response = await fetch('/api/auth/me', {
-              headers: { Authorization: `Bearer ${token}` },
-            });
+      setIsLoading(false);
 
-            if (response.ok) {
-              const body = (await response.json()) as MeResponse;
-              setUser(body.data);
-            } else {
-              await signOut(clientAuth);
-              setUser(null);
-              setIdToken(null);
-              router.push('/login?error=not_admin');
-            }
-          } catch {
+      const fetchAdminProfile = async (): Promise<void> => {
+        try {
+          const token = await firebaseUser.getIdToken();
+          setIdToken(token);
+
+          const response = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (response.ok) {
+            const body = (await response.json()) as MeResponse;
+            setUser(body.data);
+          } else {
+            await signOut(clientAuth);
             setUser(null);
             setIdToken(null);
+            router.push('/login?error=not_admin');
           }
-        } else {
+        } catch {
           setUser(null);
           setIdToken(null);
         }
-        setIsLoading(false);
       };
 
-      void load();
+      void fetchAdminProfile();
     });
     return unsubscribe;
   }, [router]);

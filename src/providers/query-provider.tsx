@@ -10,7 +10,19 @@ export interface ReactQueryProviderProps {
 }
 
 export function ReactQueryProvider({ children }: ReactQueryProviderProps): React.JSX.Element {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            staleTime: 1000 * 60 * 5,
+            gcTime: 1000 * 60 * 15,
+            refetchOnWindowFocus: false,
+            retry: 1,
+          },
+        },
+      }),
+  );
 
   return (
     <QueryClientProvider client={queryClient}>

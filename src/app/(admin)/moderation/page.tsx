@@ -49,6 +49,8 @@ export default function ModerationPage(): React.JSX.Element {
     queryKey: ['moderation'],
     queryFn: () => apiFetch<ClientPost[]>('/api/moderation', idToken ?? ''),
     enabled: idToken !== null,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const invalidate = (): void => {

@@ -63,6 +63,8 @@ function UnsafeAreasPageInner(): React.JSX.Element {
     queryFn: () =>
       apiFetch<ClientUnsafeArea[]>(`/api/unsafe-areas?status=${filter}`, idToken ?? ''),
     enabled: idToken !== null,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const invalidate = (): void => {

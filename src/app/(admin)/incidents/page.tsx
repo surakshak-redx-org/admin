@@ -69,6 +69,8 @@ export default function IncidentsPage(): React.JSX.Element {
         idToken ?? '',
       ),
     enabled: idToken !== null,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const updateMutation = useMutation({

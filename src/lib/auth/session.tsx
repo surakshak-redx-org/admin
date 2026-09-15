@@ -45,8 +45,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
         return;
       }
 
-      setIsLoading(false);
-
       const fetchAdminProfile = async (): Promise<void> => {
         try {
           const token = await firebaseUser.getIdToken();
@@ -68,6 +66,8 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
         } catch {
           setUser(null);
           setIdToken(null);
+        } finally {
+          setIsLoading(false);
         }
       };
 

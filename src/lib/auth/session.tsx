@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
   const [idToken, setIdToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const unsubscribe = clientAuth.onAuthStateChanged((firebaseUser) => {
@@ -59,6 +61,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
             setUser(body.data);
           } else {
             await signOut(clientAuth);
+            queryClient.clear();
             setUser(null);
             setIdToken(null);
             router.push('/login?error=not_admin');
@@ -74,7 +77,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
       void fetchAdminProfile();
     });
     return unsubscribe;
-  }, [router]);
+  }, [router, queryClient]);
 
   const signInWithGoogle = useCallback(async (): Promise<void> => {
     const provider = new GoogleAuthProvider();
@@ -83,10 +86,11 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
 
   const signOutAdmin = useCallback(async (): Promise<void> => {
     await signOut(clientAuth);
+    queryClient.clear();
     setUser(null);
     setIdToken(null);
     router.push('/login');
-  }, [router]);
+  }, [router, queryClient]);
 
   return (
     <AuthContext.Provider

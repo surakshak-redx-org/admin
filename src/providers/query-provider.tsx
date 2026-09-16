@@ -5,6 +5,8 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
+import { QUERY_GC_TIME_MS, QUERY_RETRY_COUNT, QUERY_STALE_TIME_MS } from '@/constants/config';
+
 export interface ReactQueryProviderProps {
   children: ReactNode;
 }
@@ -15,10 +17,10 @@ export function ReactQueryProvider({ children }: ReactQueryProviderProps): React
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 1000 * 60 * 5,
-            gcTime: 1000 * 60 * 15,
+            staleTime: QUERY_STALE_TIME_MS,
+            gcTime: QUERY_GC_TIME_MS,
             refetchOnWindowFocus: false,
-            retry: 1,
+            retry: QUERY_RETRY_COUNT,
           },
         },
       }),

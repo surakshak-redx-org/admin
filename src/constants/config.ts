@@ -20,3 +20,15 @@ export const CONTENT_PREVIEW_LENGTH = 100;
 
 /** Max length enforced on the Law "short description" form field. */
 export const SHORT_DESCRIPTION_MAX_LENGTH = 200;
+
+/** Default React Query staleTime: how long fetched data is considered fresh. */
+export const QUERY_STALE_TIME_MS = 1000 * 60 * 5;
+
+/** React Query staleTime override for queries that must always refetch on mount. */
+export const QUERY_ALWAYS_STALE_TIME_MS = 0;
+
+/** Default React Query gcTime: how long unused cached data is kept before eviction. */
+export const QUERY_GC_TIME_MS = 1000 * 60 * 15;
+
+/** Default React Query retry count for failed queries. */
+export const QUERY_RETRY_COUNT = 1;

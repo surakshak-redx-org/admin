@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/Textarea';
-import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
+import { QUERY_ALWAYS_STALE_TIME_MS, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
@@ -69,6 +69,8 @@ export default function IncidentsPage(): React.JSX.Element {
         idToken ?? '',
       ),
     enabled: idToken !== null,
+    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
+    refetchOnWindowFocus: true,
   });
 
   const updateMutation = useMutation({

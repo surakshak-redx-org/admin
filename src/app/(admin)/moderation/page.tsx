@@ -20,7 +20,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/Table';
-import { CONTENT_PREVIEW_LENGTH, REPORT_COUNT_DANGER_THRESHOLD } from '@/constants/config';
+import {
+  CONTENT_PREVIEW_LENGTH,
+  QUERY_ALWAYS_STALE_TIME_MS,
+  REPORT_COUNT_DANGER_THRESHOLD,
+} from '@/constants/config';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
@@ -49,6 +53,8 @@ export default function ModerationPage(): React.JSX.Element {
     queryKey: ['moderation'],
     queryFn: () => apiFetch<ClientPost[]>('/api/moderation', idToken ?? ''),
     enabled: idToken !== null,
+    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
+    refetchOnWindowFocus: true,
   });
 
   const invalidate = (): void => {

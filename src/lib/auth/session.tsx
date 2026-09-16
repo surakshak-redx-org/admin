@@ -1,5 +1,6 @@
 'use client';
 
+import { useQueryClient } from '@tanstack/react-query';
 import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -35,43 +36,48 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
   const [idToken, setIdToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const unsubscribe = clientAuth.onAuthStateChanged((firebaseUser) => {
-      const load = async (): Promise<void> => {
-        if (firebaseUser) {
-          try {
-            const token = await firebaseUser.getIdToken();
-            setIdToken(token);
+      if (!firebaseUser) {
+        setUser(null);
+        setIdToken(null);
+        setIsLoading(false);
+        return;
+      }
 
-            const response = await fetch('/api/auth/me', {
-              headers: { Authorization: `Bearer ${token}` },
-            });
+      const fetchAdminProfile = async (): Promise<void> => {
+        try {
+          const token = await firebaseUser.getIdToken();
+          setIdToken(token);
 
-            if (response.ok) {
-              const body = (await response.json()) as MeResponse;
-              setUser(body.data);
-            } else {
-              await signOut(clientAuth);
-              setUser(null);
-              setIdToken(null);
-              router.push('/login?error=not_admin');
-            }
-          } catch {
+          const response = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (response.ok) {
+            const body = (await response.json()) as MeResponse;
+            setUser(body.data);
+          } else {
+            await signOut(clientAuth);
+            queryClient.clear();
             setUser(null);
             setIdToken(null);
+            router.push('/login?error=not_admin');
           }
-        } else {
+        } catch {
           setUser(null);
           setIdToken(null);
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       };
 
-      void load();
+      void fetchAdminProfile();
     });
     return unsubscribe;
-  }, [router]);
+  }, [router, queryClient]);
 
   const signInWithGoogle = useCallback(async (): Promise<void> => {
     const provider = new GoogleAuthProvider();
@@ -80,10 +86,11 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
 
   const signOutAdmin = useCallback(async (): Promise<void> => {
     await signOut(clientAuth);
+    queryClient.clear();
     setUser(null);
     setIdToken(null);
     router.push('/login');
-  }, [router]);
+  }, [router, queryClient]);
 
   return (
     <AuthContext.Provider

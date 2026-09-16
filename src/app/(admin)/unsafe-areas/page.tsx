@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
+import { QUERY_ALWAYS_STALE_TIME_MS } from '@/constants/config';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
@@ -63,6 +64,8 @@ function UnsafeAreasPageInner(): React.JSX.Element {
     queryFn: () =>
       apiFetch<ClientUnsafeArea[]>(`/api/unsafe-areas?status=${filter}`, idToken ?? ''),
     enabled: idToken !== null,
+    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
+    refetchOnWindowFocus: true,
   });
 
   const invalidate = (): void => {

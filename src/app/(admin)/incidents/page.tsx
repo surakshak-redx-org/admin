@@ -288,7 +288,7 @@ export default function IncidentsPage(): React.JSX.Element {
         </div>
       ) : filteredIncidents.length === 0 && hasActiveFilters ? (
         <EmptyState
-              icon={Search}
+          icon={Search}
           title="No incidents match your filters"
           subtitle="Try adjusting or clearing the search and filters above."
           action={

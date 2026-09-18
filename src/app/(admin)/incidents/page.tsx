@@ -2,14 +2,17 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
+import { Search } from 'lucide-react';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Input } from '@/components/ui/Input';
 import type { SelectOption } from '@/components/ui/Select';
 import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
@@ -24,11 +27,20 @@ import {
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/Textarea';
-import { QUERY_ALWAYS_STALE_TIME_MS, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
+import {
+  QUERY_ALWAYS_STALE_TIME_MS,
+  SEARCH_DEBOUNCE_MS,
+  TITLE_TRUNCATE_LENGTH,
+} from '@/constants/config';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
-import type { IncidentReport, IncidentStatus, SurakshakUser } from '@/types/firestore.types';
+import type {
+  IncidentCategory,
+  IncidentReport,
+  IncidentStatus,
+  SurakshakUser,
+} from '@/types/firestore.types';
 
 type ClientIncident = Serialized<IncidentReport> & {
   id: string;
@@ -50,8 +62,49 @@ const STATUS_OPTIONS: SelectOption[] = [
   { value: 'resolved', label: 'Resolved' },
 ];
 
+/** Sentinel filter value matching reports with no `category` set. */
+const UNCATEGORIZED_VALUE = 'uncategorized';
+
+type CategoryFilterValue = IncidentCategory | typeof UNCATEGORIZED_VALUE | 'all';
+
+/** Display labels for each known incident category. */
+const CATEGORY_LABELS: Record<IncidentCategory, string> = {
+  harassment: 'Harassment',
+  theft: 'Theft',
+  physical_abuse: 'Physical Abuse',
+  stalking: 'Stalking',
+  other: 'Other',
+};
+
+const CATEGORY_FILTER_OPTIONS: SelectOption[] = [
+  { value: 'all', label: 'All Categories' },
+  ...Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label })),
+  { value: UNCATEGORIZED_VALUE, label: 'Uncategorized' },
+];
+
+const ALL_CITIES_VALUE = 'all';
+
 function truncate(text: string, length: number): string {
   return text.length > length ? `${text.slice(0, length)}…` : text;
+}
+
+function categoryLabel(category: IncidentCategory | undefined): string {
+  return category ? CATEGORY_LABELS[category] : 'Uncategorized';
+}
+
+/**
+ * Debounces a fast-changing value (e.g. a search input) so downstream
+ * filtering doesn't re-run on every keystroke. Mirrors the identical local
+ * hook in `(admin)/users/page.tsx` — kept as a page-local copy rather than
+ * a shared export so this change stays scoped to the Incidents page.
+ */
+function useDebouncedValue(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect((): (() => void) => {
+    const timer = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
 }
 
 export default function IncidentsPage(): React.JSX.Element {
@@ -60,6 +113,17 @@ export default function IncidentsPage(): React.JSX.Element {
   const [filter, setFilter] = useState<FilterValue>('all');
   const [viewIncident, setViewIncident] = useState<ClientIncident | null>(null);
   const [editIncident, setEditIncident] = useState<ClientIncident | null>(null);
+
+  // Search & advanced filters — applied client-side on top of the
+  // status-tab-filtered result set already fetched below (the incidents
+  // list, like Moderation and Unsafe Areas, is not paginated, so the full
+  // set for the active status tab is already in memory).
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
+  const [cityFilter, setCityFilter] = useState<string>(ALL_CITIES_VALUE);
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilterValue>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const incidentsQuery = useQuery({
     queryKey: ['incidents', filter],
@@ -95,7 +159,72 @@ export default function IncidentsPage(): React.JSX.Element {
     onError: () => toast.error('Failed to update incident'),
   });
 
-  const incidents = incidentsQuery.data ?? [];
+  const incidents = useMemo(() => incidentsQuery.data ?? [], [incidentsQuery.data]);
+
+  // Cities are derived from the currently loaded incidents' reporters
+  // rather than a separate lookup — there is no standalone "list of
+  // cities" endpoint, and this keeps the filter scoped to cities that
+  // actually have reports for the active status tab.
+  const cityFilterOptions = useMemo((): SelectOption[] => {
+    const cities = new Set<string>();
+    incidents.forEach((incident) => {
+      if (incident.user?.city) cities.add(incident.user.city);
+    });
+    return [
+      { value: ALL_CITIES_VALUE, label: 'All Cities' },
+      ...Array.from(cities)
+        .sort((a, b) => a.localeCompare(b))
+        .map((city) => ({ value: city, label: city })),
+    ];
+  }, [incidents]);
+
+  const filteredIncidents = useMemo((): ClientIncident[] => {
+    const query = debouncedSearch.trim().toLowerCase();
+    const fromDate = dateFrom ? new Date(dateFrom) : null;
+    let toDate: Date | null = null;
+    if (dateTo) {
+      toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+    }
+
+    return incidents.filter((incident) => {
+      if (query) {
+        const matchesSearch =
+          incident.title.toLowerCase().includes(query) ||
+          incident.description.toLowerCase().includes(query) ||
+          (incident.user?.name.toLowerCase().includes(query) ?? false);
+        if (!matchesSearch) return false;
+      }
+
+      if (cityFilter !== ALL_CITIES_VALUE && incident.user?.city !== cityFilter) return false;
+
+      if (categoryFilter !== 'all') {
+        const category = incident.category ?? UNCATEGORIZED_VALUE;
+        if (category !== categoryFilter) return false;
+      }
+
+      const createdAt = new Date(incident.createdAt);
+      if (fromDate && createdAt < fromDate) return false;
+      if (toDate && createdAt > toDate) return false;
+
+      return true;
+    });
+  }, [incidents, debouncedSearch, cityFilter, categoryFilter, dateFrom, dateTo]);
+
+  const hasActiveFilters =
+    debouncedSearch !== '' ||
+    cityFilter !== ALL_CITIES_VALUE ||
+    categoryFilter !== 'all' ||
+    dateFrom !== '' ||
+    dateTo !== '';
+
+  const clearFilters = (): void => {
+    setSearch('');
+    setCityFilter(ALL_CITIES_VALUE);
+    setCategoryFilter('all');
+    setDateFrom('');
+    setDateTo('');
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -106,10 +235,68 @@ export default function IncidentsPage(): React.JSX.Element {
         onValueChange={(v) => setFilter(v as FilterValue)}
       />
 
+      <div className="flex flex-col gap-3 rounded-md border border-gray-200 bg-white p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <Input
+            label="Search"
+            placeholder="Search by title, description, or reporter…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full sm:w-64"
+          />
+          <Select
+            label="City"
+            value={cityFilter}
+            onValueChange={setCityFilter}
+            options={cityFilterOptions}
+          />
+          <Select
+            label="Category"
+            value={categoryFilter}
+            onValueChange={(value) => setCategoryFilter(value as CategoryFilterValue)}
+            options={CATEGORY_FILTER_OPTIONS}
+          />
+          <Input
+            label="From"
+            type="date"
+            value={dateFrom}
+            onChange={(event) => setDateFrom(event.target.value)}
+          />
+          <Input
+            label="To"
+            type="date"
+            value={dateTo}
+            onChange={(event) => setDateTo(event.target.value)}
+          />
+          {hasActiveFilters ? (
+            <Button variant="outline" onClick={clearFilters}>
+              Clear Filters
+            </Button>
+          ) : null}
+        </div>
+        {incidentsQuery.isLoading ? null : (
+          <p className="text-sm text-stone">
+            Showing {filteredIncidents.length} of {incidents.length} incident
+            {incidents.length === 1 ? '' : 's'}
+          </p>
+        )}
+      </div>
+
       {incidentsQuery.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner size="lg" />
         </div>
+      ) : filteredIncidents.length === 0 && hasActiveFilters ? (
+        <EmptyState
+              icon={Search}
+          title="No incidents match your filters"
+          subtitle="Try adjusting or clearing the search and filters above."
+          action={
+            <Button variant="outline" onClick={clearFilters}>
+              Clear Filters
+            </Button>
+          }
+        />
       ) : (
         <Table>
           <TableHeader>
@@ -117,6 +304,7 @@ export default function IncidentsPage(): React.JSX.Element {
               <TableHead>Title</TableHead>
               <TableHead>User</TableHead>
               <TableHead>City</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead>Photos</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Status</TableHead>
@@ -124,11 +312,14 @@ export default function IncidentsPage(): React.JSX.Element {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {incidents.map((incident) => (
+            {filteredIncidents.map((incident) => (
               <TableRow key={incident.id}>
                 <TableCell>{truncate(incident.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
                 <TableCell>{incident.user?.name ?? '—'}</TableCell>
                 <TableCell>{incident.user?.city ?? '—'}</TableCell>
+                <TableCell>
+                  <Badge>{categoryLabel(incident.category)}</Badge>
+                </TableCell>
                 <TableCell>
                   <Badge>{incident.photoUrls.length}</Badge>
                 </TableCell>
@@ -189,6 +380,10 @@ export default function IncidentsPage(): React.JSX.Element {
             <div className="flex items-center gap-2">
               <span className="text-sm text-stone">Status:</span>
               <StatusBadge status={viewIncident.status} />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-stone">Category:</span>
+              <Badge>{categoryLabel(viewIncident.category)}</Badge>
             </div>
             {viewIncident.adminNote ? (
               <div>

@@ -1,5 +1,14 @@
+/** Default page size / limit for list endpoints (users, incidents, moderation, unsafe-areas, etc.). */
+export const DEFAULT_PAGE_SIZE = 20;
+
 /** Page size for the paginated /api/users list (cursor-based "Load more"). */
-export const USERS_PAGE_SIZE = 50;
+export const USERS_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+
+/** Maximum allowed page size / limit for list endpoints. */
+export const MAX_PAGE_SIZE = 100;
+
+/** Cache-Control header for /api/stats (SWR caching). */
+export const STATS_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=300';
 
 /** Search input debounce on the Users page, in milliseconds. */
 export const SEARCH_DEBOUNCE_MS = 300;

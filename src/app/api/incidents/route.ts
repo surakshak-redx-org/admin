@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
@@ -8,14 +9,35 @@ import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
 import type { IncidentReport, IncidentStatus, SurakshakUser } from '@/types/firestore.types';
 
+const INCIDENT_LIST_FIELDS = [
+  'userId',
+  'title',
+  'description',
+  'latitude',
+  'longitude',
+  'photoUrls',
+  'createdAt',
+  'status',
+  'adminNote',
+] as const;
+
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
 
   try {
     const status = request.nextUrl.searchParams.get('status') as IncidentStatus | null;
+    const limitParam = request.nextUrl.searchParams.get('limit');
+    const limit = Math.min(
+      Math.max(1, Number(limitParam) || DEFAULT_PAGE_SIZE),
+      MAX_PAGE_SIZE,
+    );
+    const cursor = request.nextUrl.searchParams.get('cursor');
 
-    let query = adminDb.collection(COLLECTIONS.INCIDENT_REPORTS).orderBy('createdAt', 'desc');
+    let query = adminDb
+      .collection(COLLECTIONS.INCIDENT_REPORTS)
+      .orderBy('createdAt', 'desc');
+
     if (status === 'submitted' || status === 'under_review' || status === 'resolved') {
       query = adminDb
         .collection(COLLECTIONS.INCIDENT_REPORTS)
@@ -23,15 +45,28 @@ export async function GET(request: NextRequest): Promise<Response> {
         .orderBy('createdAt', 'desc');
     }
 
-    const snap = await query.get();
+    query = query.select(...INCIDENT_LIST_FIELDS);
+
+    if (cursor) {
+      const cursorDoc = await adminDb.collection(COLLECTIONS.INCIDENT_REPORTS).doc(cursor).get();
+      if (cursorDoc.exists) {
+        query = query.startAfter(cursorDoc);
+      }
+    }
+
+    const snap = await query.limit(limit).get();
     const reports = snap.docs.map(
       (doc) => serializeDoc({ id: doc.id, ...doc.data() }) as Serialized<IncidentReport>,
     );
 
-    const userIds = Array.from(new Set(reports.map((r) => r.userId)));
-    const userDocs = await Promise.all(
-      userIds.map((uid) => adminDb.collection(COLLECTIONS.USERS).doc(uid).get()),
-    );
+    const userIds = Array.from(new Set(reports.map((r) => r.userId).filter(Boolean)));
+    const userDocs =
+      userIds.length > 0
+        ? await adminDb.getAll(
+            ...userIds.map((uid) => adminDb.collection(COLLECTIONS.USERS).doc(uid)),
+            { fieldMask: ['name', 'city'] },
+          )
+        : [];
     const usersById = new Map<string, Pick<SurakshakUser, 'name' | 'city'>>();
     userDocs.forEach((doc) => {
       if (doc.exists) {

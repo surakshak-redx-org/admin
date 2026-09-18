@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
@@ -22,15 +22,13 @@ import {
 } from '@/components/ui/Table';
 import {
   CONTENT_PREVIEW_LENGTH,
-  QUERY_ALWAYS_STALE_TIME_MS,
   REPORT_COUNT_DANGER_THRESHOLD,
 } from '@/constants/config';
+import type { ClientPost } from '@/hooks';
+import { useModeration } from '@/hooks';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { CommunityPost, PostType } from '@/types/firestore.types';
-
-type ClientPost = Serialized<CommunityPost> & { id: string };
+import type { PostType } from '@/types/firestore.types';
 
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
@@ -49,13 +47,7 @@ export default function ModerationPage(): React.JSX.Element {
   const [restorePost, setRestorePost] = useState<ClientPost | null>(null);
   const [deletePost, setDeletePost] = useState<ClientPost | null>(null);
 
-  const postsQuery = useQuery({
-    queryKey: ['moderation'],
-    queryFn: () => apiFetch<ClientPost[]>('/api/moderation', idToken ?? ''),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
+  const postsQuery = useModeration();
 
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: ['moderation'] }).catch(() => undefined);

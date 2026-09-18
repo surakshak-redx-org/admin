@@ -41,3 +41,14 @@ export const QUERY_GC_TIME_MS = 1000 * 60 * 15;
 
 /** Default React Query retry count for failed queries. */
 export const QUERY_RETRY_COUNT = 1;
+
+/** Live queue staleTime: 0 so active moderation/incident queues refetch fresh data on focus. */
+export const LIVE_QUEUE_STALE_TIME = QUERY_ALWAYS_STALE_TIME_MS;
+
+/** Centralized React Query configuration constants. */
+export const QUERY_CONFIG = {
+  STALE_TIME: QUERY_STALE_TIME_MS,
+  LIVE_QUEUE_STALE_TIME: QUERY_ALWAYS_STALE_TIME_MS,
+  GC_TIME: QUERY_GC_TIME_MS,
+  RETRY_COUNT: QUERY_RETRY_COUNT,
+} as const;

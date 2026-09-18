@@ -19,10 +19,11 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { useDashboardStats, useIncidents } from '@/hooks';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
-import type { DashboardStats, IncidentReport, SurakshakUser } from '@/types/firestore.types';
+import type { SurakshakUser } from '@/types/firestore.types';
 
 interface UsersResponse {
   users: (Serialized<SurakshakUser> & { id: string })[];
@@ -32,11 +33,7 @@ interface UsersResponse {
 export default function DashboardPage(): React.JSX.Element {
   const { user, idToken } = useAuth();
 
-  const statsQuery = useQuery({
-    queryKey: ['stats'],
-    queryFn: () => apiFetch<DashboardStats>('/api/stats', idToken ?? ''),
-    enabled: idToken !== null,
-  });
+  const statsQuery = useDashboardStats();
 
   const usersQuery = useQuery({
     queryKey: ['users', 'recent'],
@@ -44,11 +41,7 @@ export default function DashboardPage(): React.JSX.Element {
     enabled: idToken !== null,
   });
 
-  const incidentsQuery = useQuery({
-    queryKey: ['incidents', 'recent'],
-    queryFn: () => apiFetch<Serialized<IncidentReport>[]>('/api/incidents', idToken ?? ''),
-    enabled: idToken !== null,
-  });
+  const incidentsQuery = useIncidents();
 
   const stats = statsQuery.data;
   const recentUsers = usersQuery.data?.users.slice(0, 5) ?? [];

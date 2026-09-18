@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { ExternalLink, MapPin } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -22,13 +22,12 @@ import {
   TableRow,
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
-import { QUERY_ALWAYS_STALE_TIME_MS } from '@/constants/config';
+import type { ClientUnsafeArea } from '@/hooks';
+import { useUnsafeAreas } from '@/hooks';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { UnsafeArea, UnsafeAreaStatus } from '@/types/firestore.types';
+import type { UnsafeAreaStatus } from '@/types/firestore.types';
 
-type ClientUnsafeArea = Serialized<UnsafeArea> & { id: string };
 type FilterValue = UnsafeAreaStatus | 'all';
 
 const FILTER_ITEMS = [
@@ -59,14 +58,7 @@ function UnsafeAreasPageInner(): React.JSX.Element {
   const [approveArea, setApproveArea] = useState<ClientUnsafeArea | null>(null);
   const [rejectArea, setRejectArea] = useState<ClientUnsafeArea | null>(null);
 
-  const areasQuery = useQuery({
-    queryKey: ['unsafe-areas', filter],
-    queryFn: () =>
-      apiFetch<ClientUnsafeArea[]>(`/api/unsafe-areas?status=${filter}`, idToken ?? ''),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
+  const areasQuery = useUnsafeAreas({ status: filter });
 
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: ['unsafe-areas'] }).catch(() => undefined);

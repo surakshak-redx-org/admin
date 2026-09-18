@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import Image from 'next/image';
 import { useState } from 'react';
@@ -24,16 +24,12 @@ import {
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/Textarea';
-import { QUERY_ALWAYS_STALE_TIME_MS, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
+import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
+import type { ClientIncident } from '@/hooks';
+import { useIncidents } from '@/hooks';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { IncidentReport, IncidentStatus, SurakshakUser } from '@/types/firestore.types';
-
-type ClientIncident = Serialized<IncidentReport> & {
-  id: string;
-  user: Pick<SurakshakUser, 'name' | 'city'> | null;
-};
+import type { IncidentStatus } from '@/types/firestore.types';
 
 type FilterValue = IncidentStatus | 'all';
 
@@ -61,17 +57,7 @@ export default function IncidentsPage(): React.JSX.Element {
   const [viewIncident, setViewIncident] = useState<ClientIncident | null>(null);
   const [editIncident, setEditIncident] = useState<ClientIncident | null>(null);
 
-  const incidentsQuery = useQuery({
-    queryKey: ['incidents', filter],
-    queryFn: () =>
-      apiFetch<ClientIncident[]>(
-        filter === 'all' ? '/api/incidents' : `/api/incidents?status=${filter}`,
-        idToken ?? '',
-      ),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
+  const incidentsQuery = useIncidents({ status: filter });
 
   const updateMutation = useMutation({
     mutationFn: ({

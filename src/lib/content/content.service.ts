@@ -1,3 +1,4 @@
+import { MAX_PAGE_SIZE } from '@/constants/config';
 import { adminDb } from '@/lib/firebase/admin';
 
 /**
@@ -7,8 +8,11 @@ import { adminDb } from '@/lib/firebase/admin';
  * `news` is ordered by `publishedAt` instead and has its own service.
  */
 
-export async function listOrderedContent<T>(collection: string): Promise<(T & { id: string })[]> {
-  const snap = await adminDb.collection(collection).orderBy('order', 'asc').get();
+export async function listOrderedContent<T>(
+  collection: string,
+  limit = MAX_PAGE_SIZE,
+): Promise<(T & { id: string })[]> {
+  const snap = await adminDb.collection(collection).orderBy('order', 'asc').limit(limit).get();
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as T & { id: string });
 }
 

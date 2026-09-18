@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 
+import { STATS_CACHE_CONTROL } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
@@ -43,7 +44,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       publishedNews: publishedNews.data().count,
     };
 
-    return apiOk(stats);
+    return apiOk(stats, 200, {
+      'Cache-Control': STATS_CACHE_CONTROL,
+    });
   } catch (error) {
     console.error('GET /api/stats failed:', error);
     return apiError('Failed to fetch stats', 500);

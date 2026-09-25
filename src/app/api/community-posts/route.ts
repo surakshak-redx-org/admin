@@ -15,10 +15,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (!session) return apiError('Unauthorized', 401);
 
   try {
-    const snap = await adminDb
-      .collection(COLLECTIONS.COMMUNITY)
-      .orderBy('createdAt', 'desc')
-      .get();
+    const snap = await adminDb.collection(COLLECTIONS.COMMUNITY).orderBy('createdAt', 'desc').get();
 
     const posts = snap.docs.map(
       (doc) =>

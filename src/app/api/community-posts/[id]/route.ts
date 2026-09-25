@@ -9,10 +9,7 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
-export async function DELETE(
-  request: NextRequest,
-  context: RouteContext,
-): Promise<Response> {
+export async function DELETE(request: NextRequest, context: RouteContext): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
 

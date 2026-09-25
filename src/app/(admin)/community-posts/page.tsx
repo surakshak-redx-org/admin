@@ -36,9 +36,7 @@ const TYPE_VARIANT: Record<PostType, 'default' | 'info' | 'error'> = {
 };
 
 function formatPostType(type: PostType): string {
-  return type
-    .replace('_', ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+  return type.replace('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function truncate(text: string, length: number): string {
@@ -88,9 +86,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
       const firstDate = new Date(firstPost.createdAt).getTime();
       const secondDate = new Date(secondPost.createdAt).getTime();
 
-      return sortBy === 'newest'
-        ? secondDate - firstDate
-        : firstDate - secondDate;
+      return sortBy === 'newest' ? secondDate - firstDate : firstDate - secondDate;
     });
   }, [postsQuery.data, search, statusFilter, sortBy]);
 
@@ -100,13 +96,9 @@ export default function CommunityPostsPage(): React.JSX.Element {
     setIsDeleting(true);
 
     try {
-      await apiFetch(
-        `/api/community-posts/${postToDelete.id}`,
-        idToken ?? '',
-        {
-          method: 'DELETE',
-        },
-      );
+      await apiFetch(`/api/community-posts/${postToDelete.id}`, idToken ?? '', {
+        method: 'DELETE',
+      });
 
       await postsQuery.refetch();
       setPostToDelete(null);
@@ -119,9 +111,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
     <div className="mx-auto max-w-6xl space-y-4 p-6">
       <div>
         <h1 className="text-2xl font-semibold text-deep-ink">Community Posts</h1>
-        <p className="mt-1 text-sm text-stone">
-          View and manage all community posts.
-        </p>
+        <p className="mt-1 text-sm text-stone">View and manage all community posts.</p>
         <p className="mt-2 text-xs font-medium text-stone">
           {filteredPosts.length} {filteredPosts.length === 1 ? 'post' : 'posts'}
         </p>
@@ -168,9 +158,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
             }}
             disabled={postsQuery.isFetching}
           >
-            <RefreshCw
-              className={postsQuery.isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'}
-            />
+            <RefreshCw className={postsQuery.isFetching ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
             Refresh
           </Button>
         </div>
@@ -189,9 +177,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
           </p>
 
           {search || statusFilter !== 'all' ? (
-            <p className="mt-1 text-sm text-stone">
-              Try changing your search or filter.
-            </p>
+            <p className="mt-1 text-sm text-stone">Try changing your search or filter.</p>
           ) : null}
         </div>
       ) : (
@@ -219,22 +205,16 @@ export default function CommunityPostsPage(): React.JSX.Element {
                       src={post.isAnonymous ? undefined : post.authorPhotoUrl}
                       size="sm"
                     />
-                    <span>
-                      {post.isAnonymous ? 'Anonymous' : post.authorName}
-                    </span>
+                    <span>{post.isAnonymous ? 'Anonymous' : post.authorName}</span>
                   </div>
                 </TableCell>
 
-                <TableCell className="max-w-xs">
-                  {truncate(post.content, 80)}
-                </TableCell>
+                <TableCell className="max-w-xs">{truncate(post.content, 80)}</TableCell>
 
                 <TableCell className="whitespace-nowrap">{post.city}</TableCell>
 
                 <TableCell className="text-center">
-                  <Badge variant={TYPE_VARIANT[post.type]}>
-                    {formatPostType(post.type)}
-                  </Badge>
+                  <Badge variant={TYPE_VARIANT[post.type]}>{formatPostType(post.type)}</Badge>
                 </TableCell>
 
                 <TableCell>{post.reportCount}</TableCell>
@@ -253,11 +233,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
 
                 <TableCell>
                   <div className="flex gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSelectedPost(post)}
-                    >
+                    <Button size="sm" variant="outline" onClick={() => setSelectedPost(post)}>
                       View
                     </Button>
 
@@ -278,32 +254,18 @@ export default function CommunityPostsPage(): React.JSX.Element {
       )}
 
       {selectedPost ? (
-        <Dialog
-          open
-          onOpenChange={(open) => !open && setSelectedPost(null)}
-          title="Community Post"
-        >
+        <Dialog open onOpenChange={(open) => !open && setSelectedPost(null)} title="Community Post">
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <Avatar
-                name={
-                  selectedPost.isAnonymous
-                    ? 'Anonymous'
-                    : selectedPost.authorName
-                }
-                src={
-                  selectedPost.isAnonymous
-                    ? undefined
-                    : selectedPost.authorPhotoUrl
-                }
+                name={selectedPost.isAnonymous ? 'Anonymous' : selectedPost.authorName}
+                src={selectedPost.isAnonymous ? undefined : selectedPost.authorPhotoUrl}
                 size="lg"
               />
 
               <div>
                 <p className="font-semibold text-deep-ink">
-                  {selectedPost.isAnonymous
-                    ? 'Anonymous'
-                    : selectedPost.authorName}
+                  {selectedPost.isAnonymous ? 'Anonymous' : selectedPost.authorName}
                 </p>
 
                 <p className="text-sm text-stone">
@@ -313,9 +275,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
             </div>
 
             <div className="rounded-lg border border-stone/20 p-4">
-              <p className="whitespace-pre-wrap text-sm text-deep-ink">
-                {selectedPost.content}
-              </p>
+              <p className="whitespace-pre-wrap text-sm text-deep-ink">{selectedPost.content}</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
@@ -327,9 +287,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
                 {selectedPost.isHidden ? 'Hidden' : 'Visible'}
               </Badge>
 
-              <Badge>
-                {selectedPost.reportCount} reports
-              </Badge>
+              <Badge>{selectedPost.reportCount} reports</Badge>
             </div>
 
             <p className="text-sm text-stone">
@@ -371,22 +329,15 @@ export default function CommunityPostsPage(): React.JSX.Element {
         >
           <div className="space-y-4">
             <p className="text-sm text-stone">
-              Are you sure you want to delete this community post? This action
-              cannot be undone.
+              Are you sure you want to delete this community post? This action cannot be undone.
             </p>
 
             <div className="rounded-lg border border-stone/20 p-4">
-              <p className="text-sm text-deep-ink">
-                {truncate(postToDelete.content, 120)}
-              </p>
+              <p className="text-sm text-deep-ink">{truncate(postToDelete.content, 120)}</p>
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setPostToDelete(null)}
-                disabled={isDeleting}
-              >
+              <Button variant="outline" onClick={() => setPostToDelete(null)} disabled={isDeleting}>
                 Cancel
               </Button>
 

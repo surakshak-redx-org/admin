@@ -1,5 +1,6 @@
 /** Page size for the paginated /api/users list (cursor-based "Load more"). */
 export const USERS_PAGE_SIZE = 50;
+export const COMMUNITY_POSTS_PAGE_SIZE = 50;
 
 /** Search input debounce on the Users page, in milliseconds. */
 export const SEARCH_DEBOUNCE_MS = 300;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
 import Image from 'next/image';
@@ -68,15 +68,26 @@ export default function CommunityPostsPage(): React.JSX.Element {
   const [postToDelete, setPostToDelete] = useState<ClientPost | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const postsQuery = useQuery({
+  const postsQuery = useInfiniteQuery({
     queryKey: ['community-posts'],
-    queryFn: (): Promise<ClientPost[]> =>
-      apiFetch<ClientPost[]>('/api/community-posts', idToken ?? ''),
+    queryFn: ({ pageParam }): Promise<{ posts: ClientPost[]; nextCursor: string | null }> =>
+      apiFetch<{ posts: ClientPost[]; nextCursor: string | null }>(
+        pageParam
+          ? `/api/community-posts?cursor=${encodeURIComponent(pageParam)}`
+          : '/api/community-posts',
+        idToken ?? '',
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: idToken !== null,
   });
 
+  const posts = useMemo(
+    () => postsQuery.data?.pages.flatMap((page) => page.posts) ?? [],
+    [postsQuery.data],
+  );
+
   const filteredPosts = useMemo((): ClientPost[] => {
-    const posts = postsQuery.data ?? [];
     const searchTerm = search.trim().toLowerCase();
 
     const filtered = posts.filter((post) => {
@@ -104,7 +115,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
 
       return sortBy === 'newest' ? secondDate - firstDate : firstDate - secondDate;
     });
-  }, [postsQuery.data, search, statusFilter, sortBy]);
+  }, [posts, search, statusFilter, sortBy]);
 
   const handleDelete = async (): Promise<void> => {
     if (!postToDelete) return;
@@ -135,7 +146,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
         <h1 className="text-2xl font-semibold text-deep-ink">Community Posts</h1>
         <p className="mt-1 text-sm text-stone">View and manage all community posts.</p>
         <p className="mt-2 text-xs font-medium text-stone">
-          {filteredPosts.length} {filteredPosts.length === 1 ? 'post' : 'posts'}
+          {filteredPosts.length} loaded {filteredPosts.length === 1 ? 'post' : 'posts'}
         </p>
       </div>
 
@@ -279,6 +290,20 @@ export default function CommunityPostsPage(): React.JSX.Element {
           </TableBody>
         </Table>
       )}
+
+      {postsQuery.hasNextPage ? (
+        <div className="flex justify-center py-4">
+          <Button
+            variant="outline"
+            onClick={() => {
+              void postsQuery.fetchNextPage();
+            }}
+            disabled={postsQuery.isFetchingNextPage}
+          >
+            {postsQuery.isFetchingNextPage ? 'Loading...' : 'Load More'}
+          </Button>
+        </div>
+      ) : null}
 
       {selectedPost ? (
         <Dialog open onOpenChange={(open) => !open && setSelectedPost(null)} title="Community Post">

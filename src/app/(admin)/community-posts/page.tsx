@@ -1,10 +1,11 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import { useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -45,6 +46,7 @@ function truncate(text: string, length: number): string {
 
 export default function CommunityPostsPage(): React.JSX.Element {
   const { idToken } = useAuth();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
@@ -101,7 +103,10 @@ export default function CommunityPostsPage(): React.JSX.Element {
       });
 
       await postsQuery.refetch();
+      await queryClient.invalidateQueries({ queryKey: ['moderation'] });
       setPostToDelete(null);
+    } catch {
+      toast.error('Failed to delete post');
     } finally {
       setIsDeleting(false);
     }
@@ -167,6 +172,11 @@ export default function CommunityPostsPage(): React.JSX.Element {
       {postsQuery.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner size="lg" />
+        </div>
+      ) : postsQuery.isError ? (
+        <div className="py-16 text-center">
+          <p className="text-sm font-medium text-deep-ink">Failed to load community posts.</p>
+          <p className="mt-1 text-sm text-stone">Please try refreshing the page.</p>
         </div>
       ) : filteredPosts.length === 0 ? (
         <div className="py-16 text-center">
@@ -344,7 +354,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
               <Button
                 variant="destructive"
                 onClick={() => {
-                  handleDelete().catch(() => undefined);
+                  void handleDelete();
                 }}
                 disabled={isDeleting}
               >

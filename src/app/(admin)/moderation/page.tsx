@@ -59,6 +59,8 @@ export default function ModerationPage(): React.JSX.Element {
 
   const invalidate = (): void => {
     queryClient.invalidateQueries({ queryKey: ['moderation'] }).catch(() => undefined);
+
+    queryClient.invalidateQueries({ queryKey: ['community-posts'] }).catch(() => undefined);
   };
 
   const actionMutation = useMutation({

@@ -44,6 +44,20 @@ function truncate(text: string, length: number): string {
   return text.length > length ? `${text.slice(0, length)}…` : text;
 }
 
+function isSupportedImageUrl(url: string): boolean {
+  try {
+    const parsedUrl = new URL(url);
+
+    return (
+      parsedUrl.protocol === 'https:' &&
+      (parsedUrl.hostname === 'firebasestorage.googleapis.com' ||
+        parsedUrl.hostname === 'lh3.googleusercontent.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
 export default function CommunityPostsPage(): React.JSX.Element {
   const { idToken } = useAuth();
   const queryClient = useQueryClient();
@@ -69,7 +83,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
       const matchesSearch =
         !searchTerm ||
         post.content.toLowerCase().includes(searchTerm) ||
-        post.authorName.toLowerCase().includes(searchTerm) ||
+        (!post.isAnonymous && post.authorName.toLowerCase().includes(searchTerm)) ||
         post.city.toLowerCase().includes(searchTerm);
 
       const matchesStatus =
@@ -104,8 +118,11 @@ export default function CommunityPostsPage(): React.JSX.Element {
 
       await postsQuery.refetch();
       await queryClient.invalidateQueries({ queryKey: ['moderation'] });
+      await queryClient.invalidateQueries({ queryKey: ['stats'] });
       setPostToDelete(null);
     } catch {
+      await postsQuery.refetch();
+      setPostToDelete(null);
       toast.error('Failed to delete post');
     } finally {
       setIsDeleting(false);
@@ -307,7 +324,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
               })}
             </p>
 
-            {selectedPost.imageUrl ? (
+            {selectedPost.imageUrl && isSupportedImageUrl(selectedPost.imageUrl) ? (
               <Image
                 src={selectedPost.imageUrl}
                 alt="Community post"

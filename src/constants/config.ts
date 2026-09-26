@@ -1,5 +1,6 @@
 /** Page size for the paginated /api/users list (cursor-based "Load more"). */
 export const USERS_PAGE_SIZE = 50;
+export const COMMUNITY_POSTS_PAGE_SIZE = 50;
 
 /** Search input debounce on the Users page, in milliseconds. */
 export const SEARCH_DEBOUNCE_MS = 300;
@@ -32,3 +33,15 @@ export const QUERY_GC_TIME_MS = 1000 * 60 * 15;
 
 /** Default React Query retry count for failed queries. */
 export const QUERY_RETRY_COUNT = 1;
+
+/** Sort orders the /api/community-posts list accepts via `?sort=`. */
+export const COMMUNITY_POST_SORTS = ['newest', 'oldest', 'most-reported'] as const;
+
+/** Visibility filters the /api/community-posts list accepts via `?status=`. */
+export const COMMUNITY_POST_STATUSES = ['all', 'visible', 'hidden'] as const;
+
+/**
+ * Only shared-location links in this format (CLAUDE.md → Location URL Format
+ * in the app repo) are rendered as clickable links in the admin UI.
+ */
+export const LOCATION_URL_PREFIX = 'https://www.google.com/maps/place/';

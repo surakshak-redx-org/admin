@@ -1,6 +1,17 @@
+/** Default page size for paginated endpoints. */
+export const DEFAULT_PAGE_SIZE = 20;
+
 /** Page size for the paginated /api/users list (cursor-based "Load more"). */
-export const USERS_PAGE_SIZE = 50;
+export const USERS_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+
+/** Page size for the paginated /api/community-posts list (cursor-based "Load more"). */
 export const COMMUNITY_POSTS_PAGE_SIZE = 50;
+
+/** Maximum allowed page size for paginated endpoints. */
+export const MAX_PAGE_SIZE = 100;
+
+/** Cache-Control header for /api/stats (private SWR caching for authenticated endpoint). */
+export const STATS_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=300';
 
 /** Search input debounce on the Users page, in milliseconds. */
 export const SEARCH_DEBOUNCE_MS = 300;

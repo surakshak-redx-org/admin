@@ -9,12 +9,26 @@ import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
 import type { NewsItem } from '@/types/firestore.types';
 
+const NEWS_LIST_FIELDS = [
+  'title',
+  'summary',
+  'content',
+  'imageUrl',
+  'category',
+  'publishedAt',
+  'isPublished',
+] as const;
+
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
 
   try {
-    const snap = await adminDb.collection(COLLECTIONS.NEWS).orderBy('publishedAt', 'desc').get();
+    const snap = await adminDb
+      .collection(COLLECTIONS.NEWS)
+      .orderBy('publishedAt', 'desc')
+      .select(...NEWS_LIST_FIELDS)
+      .get();
     const news = snap.docs.map(
       (doc) => serializeDoc({ id: doc.id, ...doc.data() }) as Serialized<NewsItem>,
     );

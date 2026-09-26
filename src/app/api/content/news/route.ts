@@ -1,7 +1,6 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import type { NextRequest } from 'next/server';
 
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
@@ -25,14 +24,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (!session) return apiError('Unauthorized', 401);
 
   try {
-    const limitParam = request.nextUrl.searchParams.get('limit');
-    const limit = Math.min(Math.max(1, Number(limitParam) || DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
-
     const snap = await adminDb
       .collection(COLLECTIONS.NEWS)
       .orderBy('publishedAt', 'desc')
       .select(...NEWS_LIST_FIELDS)
-      .limit(limit)
       .get();
     const news = snap.docs.map(
       (doc) => serializeDoc({ id: doc.id, ...doc.data() }) as Serialized<NewsItem>,

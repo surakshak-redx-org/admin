@@ -1,7 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import type { NextRequest } from 'next/server';
 
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { forbiddenResponse, verifyAdminToken } from '@/lib/auth/middleware';
@@ -18,14 +17,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (session.admin.role !== 'super_admin') return forbiddenResponse();
 
   try {
-    const limitParam = request.nextUrl.searchParams.get('limit');
-    const limit = Math.min(Math.max(1, Number(limitParam) || DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
-
     const snap = await adminDb
       .collection(COLLECTIONS.ADMINS)
       .orderBy('createdAt', 'asc')
       .select(...ADMIN_LIST_FIELDS)
-      .limit(limit)
       .get();
     const admins = snap.docs.map((doc) => serializeDoc(doc.data()) as Serialized<AdminUser>);
     return apiOk(admins);

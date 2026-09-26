@@ -22,12 +22,27 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/Table';
+import {
+  COMMUNITY_POST_SORTS,
+  COMMUNITY_POST_STATUSES,
+  LOCATION_URL_PREFIX,
+} from '@/constants/config';
 import { apiFetch } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
 import type { CommunityPost, PostType } from '@/types/firestore.types';
 
 type ClientPost = Serialized<CommunityPost> & { id: string };
+type CommunityPostSort = (typeof COMMUNITY_POST_SORTS)[number];
+type CommunityPostStatus = (typeof COMMUNITY_POST_STATUSES)[number];
+
+function isCommunityPostSort(value: string): value is CommunityPostSort {
+  return COMMUNITY_POST_SORTS.some((sort) => sort === value);
+}
+
+function isCommunityPostStatus(value: string): value is CommunityPostStatus {
+  return COMMUNITY_POST_STATUSES.some((status) => status === value);
+}
 
 const TYPE_VARIANT: Record<PostType, 'default' | 'info' | 'error'> = {
   text: 'default',
@@ -58,23 +73,36 @@ function isSupportedImageUrl(url: string): boolean {
   }
 }
 
+/** Post data is user-written — only link out to the documented Maps URL format. */
+function isSupportedLocationUrl(url: string): boolean {
+  return url.startsWith(LOCATION_URL_PREFIX);
+}
+
+function buildPostsUrl(
+  sort: CommunityPostSort,
+  status: CommunityPostStatus,
+  cursor: string | null,
+): string {
+  const params = new URLSearchParams({ sort, status });
+  if (cursor) params.set('cursor', cursor);
+  return `/api/community-posts?${params.toString()}`;
+}
+
 export default function CommunityPostsPage(): React.JSX.Element {
   const { idToken } = useAuth();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
+  const [statusFilter, setStatusFilter] = useState<CommunityPostStatus>('all');
+  const [sortBy, setSortBy] = useState<CommunityPostSort>('newest');
   const [selectedPost, setSelectedPost] = useState<ClientPost | null>(null);
   const [postToDelete, setPostToDelete] = useState<ClientPost | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const postsQuery = useInfiniteQuery({
-    queryKey: ['community-posts'],
+    queryKey: ['community-posts', sortBy, statusFilter],
     queryFn: ({ pageParam }): Promise<{ posts: ClientPost[]; nextCursor: string | null }> =>
       apiFetch<{ posts: ClientPost[]; nextCursor: string | null }>(
-        pageParam
-          ? `/api/community-posts?cursor=${encodeURIComponent(pageParam)}`
-          : '/api/community-posts',
+        buildPostsUrl(sortBy, statusFilter, pageParam),
         idToken ?? '',
       ),
     initialPageParam: null as string | null,
@@ -87,35 +115,19 @@ export default function CommunityPostsPage(): React.JSX.Element {
     [postsQuery.data],
   );
 
+  // Status and sort are applied server-side (they change the query key), so
+  // only the free-text search filters the pages already loaded.
   const filteredPosts = useMemo((): ClientPost[] => {
     const searchTerm = search.trim().toLowerCase();
+    if (!searchTerm) return posts;
 
-    const filtered = posts.filter((post) => {
-      const matchesSearch =
-        !searchTerm ||
+    return posts.filter(
+      (post) =>
         post.content.toLowerCase().includes(searchTerm) ||
         (!post.isAnonymous && post.authorName.toLowerCase().includes(searchTerm)) ||
-        post.city.toLowerCase().includes(searchTerm);
-
-      const matchesStatus =
-        statusFilter === 'all' ||
-        (statusFilter === 'hidden' && post.isHidden) ||
-        (statusFilter === 'visible' && !post.isHidden);
-
-      return matchesSearch && matchesStatus;
-    });
-
-    return [...filtered].sort((firstPost, secondPost) => {
-      if (sortBy === 'most-reported') {
-        return secondPost.reportCount - firstPost.reportCount;
-      }
-
-      const firstDate = new Date(firstPost.createdAt).getTime();
-      const secondDate = new Date(secondPost.createdAt).getTime();
-
-      return sortBy === 'newest' ? secondDate - firstDate : firstDate - secondDate;
-    });
-  }, [posts, search, statusFilter, sortBy]);
+        post.city.toLowerCase().includes(searchTerm),
+    );
+  }, [posts, search]);
 
   const handleDelete = async (): Promise<void> => {
     if (!postToDelete) return;
@@ -161,7 +173,9 @@ export default function CommunityPostsPage(): React.JSX.Element {
         <Select
           label="Status"
           value={statusFilter}
-          onValueChange={setStatusFilter}
+          onValueChange={(value) => {
+            if (isCommunityPostStatus(value)) setStatusFilter(value);
+          }}
           options={[
             { value: 'all', label: 'All' },
             { value: 'visible', label: 'Visible' },
@@ -172,7 +186,9 @@ export default function CommunityPostsPage(): React.JSX.Element {
         <Select
           label="Sort By"
           value={sortBy}
-          onValueChange={setSortBy}
+          onValueChange={(value) => {
+            if (isCommunityPostSort(value)) setSortBy(value);
+          }}
           options={[
             { value: 'newest', label: 'Newest' },
             { value: 'oldest', label: 'Oldest' },
@@ -359,12 +375,12 @@ export default function CommunityPostsPage(): React.JSX.Element {
               />
             ) : null}
 
-            {selectedPost.locationUrl ? (
+            {selectedPost.locationUrl && isSupportedLocationUrl(selectedPost.locationUrl) ? (
               <a
                 href={selectedPost.locationUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="text-sm font-medium text-electric-blue underline"
+                className="text-sm font-medium text-shakti-purple underline"
               >
                 View shared location
               </a>

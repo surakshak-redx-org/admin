@@ -67,6 +67,13 @@ export interface UnsafeArea {
 // ─── Incidents ──────────────────────────────────────────────────────
 export type IncidentStatus = 'submitted' | 'under_review' | 'resolved';
 
+/**
+ * Incident category, used by the admin dashboard's Incidents search &
+ * filter UI. Optional on `IncidentReport` — see the note on that field
+ * below before assuming every document has one.
+ */
+export type IncidentCategory = 'harassment' | 'theft' | 'physical_abuse' | 'stalking' | 'other';
+
 /** Mirrors Firestore `incidentReports/{reportId}`. `adminNote` is admin-only. */
 export interface IncidentReport {
   id: string;
@@ -78,6 +85,15 @@ export interface IncidentReport {
   photoUrls: string[];
   createdAt: Timestamp;
   status: IncidentStatus;
+  /**
+   * Optional — added for the admin dashboard's Category/Incident Type
+   * filter (see `(admin)/incidents/page.tsx`). The `app` repo does not
+   * currently write this field on submission, so existing and newly
+   * submitted reports alike may not have it; the dashboard treats a
+   * missing value as "Uncategorized" rather than assuming one. Purely
+   * additive — does not affect any existing read or write path.
+   */
+  category?: IncidentCategory;
   adminNote?: string;
 }
 

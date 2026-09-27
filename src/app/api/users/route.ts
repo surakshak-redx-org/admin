@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 
-import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '@/constants/config';
+import { MAX_PAGE_SIZE, USERS_PAGE_SIZE } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const search = request.nextUrl.searchParams.get('search')?.trim().toLowerCase() ?? '';
     const cursor = request.nextUrl.searchParams.get('cursor');
     const limitParam = request.nextUrl.searchParams.get('limit');
-    const pageSize = Math.min(Math.max(1, Number(limitParam) || DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+    const pageSize = Math.min(Math.max(1, Number(limitParam) || USERS_PAGE_SIZE), MAX_PAGE_SIZE);
 
     if (search) {
       // Firestore has no case-insensitive "contains" query — fetch a bounded,
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         .collection(COLLECTIONS.USERS)
         .orderBy('createdAt', 'desc')
         .select(...PUBLIC_USER_FIELDS)
-        .limit(pageSize * 4)
+        .limit(USERS_PAGE_SIZE * 4)
         .get();
 
       const matches = snap.docs

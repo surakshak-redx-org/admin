@@ -56,8 +56,8 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     }
 
     if (action === 'reject') {
-      await ref.delete();
-      return apiOk({ id, deleted: true });
+      await ref.update({ status: 'rejected' });
+      return apiOk({ id, status: 'rejected' });
     }
 
     return apiError('Invalid action', 400);

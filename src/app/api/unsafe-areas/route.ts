@@ -28,7 +28,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const status = request.nextUrl.searchParams.get('status') as UnsafeAreaStatus | 'all' | null;
 
     let query = adminDb.collection(COLLECTIONS.UNSAFE_AREAS).orderBy('createdAt', 'desc');
-    if (status === 'pending' || status === 'approved') {
+    if (status === 'pending' || status === 'approved' || status === 'rejected') {
       query = adminDb
         .collection(COLLECTIONS.UNSAFE_AREAS)
         .where('status', '==', status)

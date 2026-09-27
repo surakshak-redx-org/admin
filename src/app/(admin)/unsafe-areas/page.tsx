@@ -35,6 +35,7 @@ const FILTER_ITEMS = [
   { value: 'all', label: 'All' },
   { value: 'pending', label: 'Pending' },
   { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
 ];
 
 function mapsUrl(lat: number, lng: number): string {
@@ -80,7 +81,7 @@ function UnsafeAreasPageInner(): React.JSX.Element {
       }),
     onSuccess: (_data, variables) => {
       toast.success(
-        variables.action === 'approve' ? 'Area approved and visible on map' : 'Report removed',
+        variables.action === 'approve' ? 'Area approved and visible on map' : 'Report rejected',
       );
       setApproveArea(null);
       setRejectArea(null);

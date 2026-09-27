@@ -9,13 +9,19 @@ import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
 import type { AdminUser } from '@/types/firestore.types';
 
+const ADMIN_LIST_FIELDS = ['uid', 'email', 'displayName', 'photoUrl', 'role', 'createdAt'] as const;
+
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
   if (session.admin.role !== 'super_admin') return forbiddenResponse();
 
   try {
-    const snap = await adminDb.collection(COLLECTIONS.ADMINS).orderBy('createdAt', 'asc').get();
+    const snap = await adminDb
+      .collection(COLLECTIONS.ADMINS)
+      .orderBy('createdAt', 'asc')
+      .select(...ADMIN_LIST_FIELDS)
+      .get();
     const admins = snap.docs.map((doc) => serializeDoc(doc.data()) as Serialized<AdminUser>);
     return apiOk(admins);
   } catch (error) {

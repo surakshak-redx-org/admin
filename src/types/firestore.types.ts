@@ -43,7 +43,7 @@ export interface CommunityPost {
 // ─── Unsafe Areas ───────────────────────────────────────────────────
 export type UnsafeAreaCategory = 'poorly_lit' | 'isolated' | 'harassment_reported' | 'other';
 
-export type UnsafeAreaStatus = 'pending' | 'approved';
+export type UnsafeAreaStatus = 'pending' | 'approved' | 'rejected';
 export type PinColor = 'orange' | 'red';
 
 /** Mirrors Firestore `unsafeAreas/{areaId}`. */

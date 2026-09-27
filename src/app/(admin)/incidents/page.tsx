@@ -178,14 +178,19 @@ export default function IncidentsPage(): React.JSX.Element {
     ];
   }, [incidents]);
 
+  // A selected city can drop out of the options when the loaded incidents
+  // change (e.g. after a status update); fall back to "All Cities" rather
+  // than silently filtering on a value the dropdown can no longer show.
+  const activeCityFilter = cityFilterOptions.some((option) => option.value === cityFilter)
+    ? cityFilter
+    : ALL_CITIES_VALUE;
+
   const filteredIncidents = useMemo((): ClientIncident[] => {
     const query = debouncedSearch.trim().toLowerCase();
-    const fromDate = dateFrom ? new Date(dateFrom) : null;
-    let toDate: Date | null = null;
-    if (dateTo) {
-      toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-    }
+    // Date-only strings ("2026-09-01") parse as UTC midnight; appending a
+    // time makes them parse in the admin's local time zone instead.
+    const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+    const toDate = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
 
     return incidents.filter((incident) => {
       if (query) {
@@ -196,7 +201,9 @@ export default function IncidentsPage(): React.JSX.Element {
         if (!matchesSearch) return false;
       }
 
-      if (cityFilter !== ALL_CITIES_VALUE && incident.user?.city !== cityFilter) return false;
+      if (activeCityFilter !== ALL_CITIES_VALUE && incident.user?.city !== activeCityFilter) {
+        return false;
+      }
 
       if (categoryFilter !== 'all') {
         const category = incident.category ?? UNCATEGORIZED_VALUE;
@@ -209,11 +216,11 @@ export default function IncidentsPage(): React.JSX.Element {
 
       return true;
     });
-  }, [incidents, debouncedSearch, cityFilter, categoryFilter, dateFrom, dateTo]);
+  }, [incidents, debouncedSearch, activeCityFilter, categoryFilter, dateFrom, dateTo]);
 
   const hasActiveFilters =
     debouncedSearch !== '' ||
-    cityFilter !== ALL_CITIES_VALUE ||
+    activeCityFilter !== ALL_CITIES_VALUE ||
     categoryFilter !== 'all' ||
     dateFrom !== '' ||
     dateTo !== '';
@@ -232,7 +239,10 @@ export default function IncidentsPage(): React.JSX.Element {
       <Tabs
         items={FILTER_ITEMS}
         value={filter}
-        onValueChange={(v) => setFilter(v as FilterValue)}
+        onValueChange={(v) => {
+          setFilter(v as FilterValue);
+          setCityFilter(ALL_CITIES_VALUE);
+        }}
       />
 
       <div className="flex flex-col gap-3 rounded-md border border-gray-200 bg-white p-4">
@@ -246,7 +256,7 @@ export default function IncidentsPage(): React.JSX.Element {
           />
           <Select
             label="City"
-            value={cityFilter}
+            value={activeCityFilter}
             onValueChange={setCityFilter}
             options={cityFilterOptions}
           />

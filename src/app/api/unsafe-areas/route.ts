@@ -8,6 +8,18 @@ import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
 import type { UnsafeArea, UnsafeAreaStatus } from '@/types/firestore.types';
 
+const UNSAFE_AREA_LIST_FIELDS = [
+  'title',
+  'category',
+  'latitude',
+  'longitude',
+  'reportedBy',
+  'createdAt',
+  'status',
+  'upvotes',
+  'downvotes',
+] as const;
+
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
@@ -16,12 +28,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     const status = request.nextUrl.searchParams.get('status') as UnsafeAreaStatus | 'all' | null;
 
     let query = adminDb.collection(COLLECTIONS.UNSAFE_AREAS).orderBy('createdAt', 'desc');
-    if (status === 'pending' || status === 'approved') {
+    if (status === 'pending' || status === 'approved' || status === 'rejected') {
       query = adminDb
         .collection(COLLECTIONS.UNSAFE_AREAS)
         .where('status', '==', status)
         .orderBy('createdAt', 'desc');
     }
+
+    query = query.select(...UNSAFE_AREA_LIST_FIELDS);
 
     const snap = await query.get();
     const areas = snap.docs.map(

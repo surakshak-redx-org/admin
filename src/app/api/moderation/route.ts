@@ -8,6 +8,16 @@ import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
 import type { CommunityPost } from '@/types/firestore.types';
 
+const MODERATION_LIST_FIELDS = [
+  'authorName',
+  'content',
+  'type',
+  'isAnonymous',
+  'city',
+  'reportCount',
+  'createdAt',
+] as const;
+
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
@@ -17,6 +27,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       .collection(COLLECTIONS.COMMUNITY)
       .where('isHidden', '==', true)
       .orderBy('reportCount', 'desc')
+      .select(...MODERATION_LIST_FIELDS)
       .get();
 
     const posts = snap.docs.map(

@@ -76,18 +76,13 @@ export function FaqsTab(): React.JSX.Element {
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ id: string; isPublished: boolean }>(
-        `/api/content/faqs/${id}`,
-        idToken ?? '',
-        { method: 'PATCH' },
-      ),
+      apiFetch<{ id: string; isPublished: boolean }>(`/api/content/faqs/${id}`, idToken ?? '', {
+        method: 'PATCH',
+      }),
     onSuccess: ({ id, isPublished }) => {
       queryClient.setQueryData<FAQ[]>(
         ['content', 'faqs'],
-        (current) =>
-          current?.map((faq) =>
-            faq.id === id ? { ...faq, isPublished } : faq,
-          ) ?? [],
+        (current) => current?.map((faq) => (faq.id === id ? { ...faq, isPublished } : faq)) ?? [],
       );
     },
     onError: () => toast.error('Failed to update FAQ'),

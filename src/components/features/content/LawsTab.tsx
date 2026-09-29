@@ -85,18 +85,13 @@ export function LawsTab(): React.JSX.Element {
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ id: string; isPublished: boolean }>(
-        `/api/content/laws/${id}`,
-        idToken ?? '',
-        { method: 'PATCH' },
-      ),
+      apiFetch<{ id: string; isPublished: boolean }>(`/api/content/laws/${id}`, idToken ?? '', {
+        method: 'PATCH',
+      }),
     onSuccess: ({ id, isPublished }) => {
       queryClient.setQueryData<Law[]>(
         ['content', 'laws'],
-        (current) =>
-          current?.map((law) =>
-            law.id === id ? { ...law, isPublished } : law,
-          ) ?? [],
+        (current) => current?.map((law) => (law.id === id ? { ...law, isPublished } : law)) ?? [],
       );
     },
     onError: () => toast.error('Failed to update law'),

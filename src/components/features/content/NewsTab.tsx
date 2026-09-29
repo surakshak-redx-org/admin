@@ -83,18 +83,14 @@ export function NewsTab(): React.JSX.Element {
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) =>
-      apiFetch<{ id: string; isPublished: boolean }>(
-        `/api/content/news/${id}`,
-        idToken ?? '',
-        { method: 'PATCH' },
-      ),
+      apiFetch<{ id: string; isPublished: boolean }>(`/api/content/news/${id}`, idToken ?? '', {
+        method: 'PATCH',
+      }),
     onSuccess: ({ id, isPublished }) => {
       queryClient.setQueryData<ClientNewsItem[]>(
         ['content', 'news'],
         (current) =>
-          current?.map((item) =>
-            item.id === id ? { ...item, isPublished } : item,
-          ) ?? [],
+          current?.map((item) => (item.id === id ? { ...item, isPublished } : item)) ?? [],
       );
     },
     onError: () => toast.error('Failed to update news item'),

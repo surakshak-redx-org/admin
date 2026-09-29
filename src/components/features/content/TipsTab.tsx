@@ -76,8 +76,15 @@ export function TipsTab(): React.JSX.Element {
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) =>
-      apiFetch(`/api/content/tips/${id}`, idToken ?? '', { method: 'PATCH' }),
-    onSuccess: invalidate,
+      apiFetch<{ id: string; isPublished: boolean }>(`/api/content/tips/${id}`, idToken ?? '', {
+        method: 'PATCH',
+      }),
+    onSuccess: ({ id, isPublished }) => {
+      queryClient.setQueryData<SafetyTip[]>(
+        ['content', 'tips'],
+        (current) => current?.map((tip) => (tip.id === id ? { ...tip, isPublished } : tip)) ?? [],
+      );
+    },
     onError: () => toast.error('Failed to update safety tip'),
   });
 
@@ -131,6 +138,7 @@ export function TipsTab(): React.JSX.Element {
                 <Switch
                   checked={tip.isPublished}
                   onCheckedChange={() => toggleMutation.mutate(tip.id)}
+                  disabled={toggleMutation.isPending}
                 />
               </TableCell>
               <TableCell>{tip.order}</TableCell>

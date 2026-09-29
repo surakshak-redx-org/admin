@@ -83,8 +83,20 @@ export function NewsTab(): React.JSX.Element {
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) =>
-      apiFetch(`/api/content/news/${id}`, idToken ?? '', { method: 'PATCH' }),
-    onSuccess: invalidate,
+      apiFetch<{ id: string; isPublished: boolean }>(
+        `/api/content/news/${id}`,
+        idToken ?? '',
+        { method: 'PATCH' },
+      ),
+    onSuccess: ({ id, isPublished }) => {
+      queryClient.setQueryData<ClientNewsItem[]>(
+        ['content', 'news'],
+        (current) =>
+          current?.map((item) =>
+            item.id === id ? { ...item, isPublished } : item,
+          ) ?? [],
+      );
+    },
     onError: () => toast.error('Failed to update news item'),
   });
 
@@ -138,6 +150,7 @@ export function NewsTab(): React.JSX.Element {
                 <Switch
                   checked={news.isPublished}
                   onCheckedChange={() => toggleMutation.mutate(news.id)}
+                  disabled={toggleMutation.isPending}
                 />
               </TableCell>
               <TableCell>{format(new Date(news.publishedAt), 'PP')}</TableCell>

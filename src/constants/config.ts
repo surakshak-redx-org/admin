@@ -50,3 +50,6 @@ export const COMMUNITY_POST_STATUSES = ['all', 'visible', 'hidden'] as const;
  * in the app repo) are rendered as clickable links in the admin UI.
  */
 export const LOCATION_URL_PREFIX = 'https://www.google.com/maps/place/';
+
+/** Maximum execution duration allowed for the health check Firestore probe in milliseconds. */
+export const FIRESTORE_PROBE_TIMEOUT_MS = 3000;

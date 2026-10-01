@@ -1,13 +1,12 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { ENV } from '@/config/env';
-import { COLLECTIONS } from '@/constants/firestore';
-import { adminApp, adminDb } from '@/lib/firebase/admin';
+import { FIRESTORE_PROBE_TIMEOUT_MS } from '@/constants/config';
+import { apiError } from '@/lib/api/response';
+import { verifyAdminToken } from '@/lib/auth/middleware';
 import type {
   DependencyCheckResult,
   DependencyStatus,
-  HealthCheckResult,
   HealthStatus,
   LivenessResponse,
   ReadinessResponse,
@@ -18,6 +17,7 @@ export const dynamic = 'force-dynamic';
 const APP_VERSION = '0.1.0';
 
 const HTTP_STATUS_OK = 200;
+const HTTP_STATUS_UNAUTHORIZED = 401;
 const HTTP_STATUS_SERVICE_UNAVAILABLE = 503;
 
 const CACHE_TTL_MS = 15_000;
@@ -78,10 +78,13 @@ function getSystemMetrics(): ReadinessResponse['system'] {
   };
 }
 
-function checkFirebaseAdmin(): DependencyCheckResult {
+async function checkFirebaseAdmin(): Promise<DependencyCheckResult> {
   const start = Date.now();
   try {
-    if (!adminApp || typeof adminApp.name !== 'string' || adminApp.name.length === 0) {
+    const adminModule = await import('@/lib/firebase/admin');
+    const app = adminModule.adminApp;
+
+    if (!app || typeof app.name !== 'string' || app.name.length === 0) {
       return {
         name: CHECK_FIREBASE_ADMIN,
         status: STATUS_UNHEALTHY,
@@ -96,7 +99,7 @@ function checkFirebaseAdmin(): DependencyCheckResult {
       latencyMs: Date.now() - start,
       message: 'Firebase Admin initialized successfully',
       details: {
-        appName: adminApp.name,
+        appName: app.name,
       },
     };
   } catch (error: unknown) {
@@ -104,7 +107,10 @@ function checkFirebaseAdmin(): DependencyCheckResult {
       name: CHECK_FIREBASE_ADMIN,
       status: STATUS_UNHEALTHY,
       latencyMs: Date.now() - start,
-      message: error instanceof Error ? error.message : 'Firebase Admin health check failed',
+      message:
+        error instanceof Error
+          ? error.message
+          : 'Firebase Admin initialization failed or missing credentials',
     };
   }
 }
@@ -112,7 +118,30 @@ function checkFirebaseAdmin(): DependencyCheckResult {
 async function checkFirestore(): Promise<DependencyCheckResult> {
   const start = Date.now();
   try {
-    await adminDb.collection(COLLECTIONS.ADMINS).limit(FIRESTORE_PROBE_LIMIT).get();
+    const adminModule = await import('@/lib/firebase/admin');
+    const firestoreModule = await import('@/constants/firestore');
+    const db = adminModule.adminDb;
+    const collections = firestoreModule.COLLECTIONS;
+
+    const probePromise = db.collection(collections.ADMINS).limit(FIRESTORE_PROBE_LIMIT).get();
+
+    let timerId: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject): void => {
+      timerId = setTimeout((): void => {
+        reject(
+          new Error(`Firestore probe timed out after ${FIRESTORE_PROBE_TIMEOUT_MS.toString()}ms`),
+        );
+      }, FIRESTORE_PROBE_TIMEOUT_MS);
+    });
+
+    try {
+      await Promise.race([probePromise, timeoutPromise]);
+    } finally {
+      if (timerId !== undefined) {
+        clearTimeout(timerId);
+      }
+    }
+
     return {
       name: CHECK_FIRESTORE,
       status: STATUS_HEALTHY,
@@ -129,21 +158,27 @@ async function checkFirestore(): Promise<DependencyCheckResult> {
   }
 }
 
-function checkConfiguration(): DependencyCheckResult {
+async function checkConfiguration(): Promise<DependencyCheckResult> {
   const start = Date.now();
   const missingVars: string[] = [];
   const presentVars: string[] = [];
 
+  let resolvedEnv: Record<string, unknown> | null = null;
+  try {
+    const envModule = await import('@/config/env');
+    resolvedEnv = envModule.ENV;
+  } catch {
+    // Falls back to direct process.env inspection below if env schema validation threw
+  }
+
   for (const varName of REQUIRED_CONFIG_VARS) {
     let isPresent = false;
-    if (varName === 'FIREBASE_PROJECT_ID') {
-      isPresent = Boolean(ENV.FIREBASE_PROJECT_ID);
-    } else if (varName === 'APP_ENV') {
-      isPresent = Boolean(ENV.APP_ENV);
-    } else if (varName === 'APP_URL') {
-      isPresent = Boolean(ENV.APP_URL);
-    } else if (varName === 'FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64') {
+    if (varName === 'FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64') {
       isPresent = Boolean(process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64);
+    } else if (resolvedEnv && resolvedEnv[varName]) {
+      isPresent = Boolean(resolvedEnv[varName]);
+    } else {
+      isPresent = Boolean(process.env[varName] ?? process.env[`NEXT_PUBLIC_${varName}`]);
     }
 
     if (isPresent) {
@@ -172,12 +207,16 @@ function checkConfiguration(): DependencyCheckResult {
   };
 }
 
+function resolveEnvironment(): string {
+  return process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? 'unknown';
+}
+
 function buildLivenessResponse(): LivenessResponse {
   return {
     status: LIVENESS_STATUS_OK,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: ENV.APP_ENV,
+    environment: resolveEnvironment(),
     version: APP_VERSION,
   };
 }
@@ -186,9 +225,9 @@ async function buildReadinessResponse(): Promise<{
   response: ReadinessResponse;
   httpStatus: number;
 }> {
-  const firebaseAdminCheck = checkFirebaseAdmin();
+  const firebaseAdminCheck = await checkFirebaseAdmin();
   const firestoreCheck = await checkFirestore();
-  const configurationCheck = checkConfiguration();
+  const configurationCheck = await checkConfiguration();
 
   const checks: DependencyCheckResult[] = [firebaseAdminCheck, firestoreCheck, configurationCheck];
 
@@ -200,7 +239,7 @@ async function buildReadinessResponse(): Promise<{
     status: overallStatus,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: ENV.APP_ENV,
+    environment: resolveEnvironment(),
     version: APP_VERSION,
     checks,
     system: getSystemMetrics(),
@@ -219,7 +258,7 @@ function getValidCachedReadiness(now: number): CachedReadiness | null {
   return null;
 }
 
-export async function GET(request: NextRequest): Promise<NextResponse<HealthCheckResult>> {
+export async function GET(request: NextRequest): Promise<Response> {
   const isDeep = request.nextUrl.searchParams.get(PARAM_DEEP) === VALUE_TRUE;
 
   if (!isDeep) {
@@ -230,6 +269,13 @@ export async function GET(request: NextRequest): Promise<NextResponse<HealthChec
         [HEADER_CACHE_CONTROL]: CACHE_CONTROL_LIVE,
       },
     });
+  }
+
+  // Deep diagnostic health checks inspect internal operational parameters and downstream credentials.
+  // Gated behind verifyAdminToken() to protect sensitive configuration and system metrics.
+  const session = await verifyAdminToken(request);
+  if (!session) {
+    return apiError('Unauthorized', HTTP_STATUS_UNAUTHORIZED);
   }
 
   const now = Date.now();

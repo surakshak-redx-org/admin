@@ -1,22 +1,61 @@
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GET } from '@/app/api/health/route';
+import { FIRESTORE_PROBE_TIMEOUT_MS } from '@/constants/config';
 import type { LivenessResponse, ReadinessResponse } from '@/types/observability.types';
 
-import { mockAdminDb, setFirestoreError } from '../mocks/firebase-admin.mock';
+import {
+  createMockCollection,
+  mockAdminAuth,
+  mockAdminDb,
+  setCollectionDocs,
+  setFirestoreError,
+  setFirestoreQueryError,
+  type MockCollectionReference,
+  type MockQuery,
+} from '../mocks/firebase-admin.mock';
+
+interface ApiErrorResponse {
+  readonly data: null;
+  readonly error: string;
+}
 
 describe('GET /api/health', () => {
+  const validAdminUid = 'health-admin-uid-123';
+  const validAdminToken = 'valid-health-admin-token';
+
   beforeEach((): void => {
     vi.useRealTimers();
     setFirestoreError(null);
+    setFirestoreQueryError(null);
+
+    mockAdminDb.collection.mockImplementation((name: string) => createMockCollection(name));
+
+    mockAdminAuth.verifyIdToken.mockResolvedValue({
+      uid: validAdminUid,
+      email: 'admin@surakshak.in',
+    } as unknown as DecodedIdToken);
+
+    setCollectionDocs('admins', [
+      {
+        id: validAdminUid,
+        data: {
+          uid: validAdminUid,
+          email: 'admin@surakshak.in',
+          role: 'admin',
+        },
+      },
+    ]);
   });
 
   afterEach((): void => {
     vi.useRealTimers();
+    mockAdminDb.collection.mockImplementation((name: string) => createMockCollection(name));
   });
 
-  it('returns 200 OK with liveness payload and does not touch Firestore', async (): Promise<void> => {
+  it('returns 200 OK with liveness payload and does not touch Firestore or require auth', async (): Promise<void> => {
     const request = new NextRequest('http://localhost:3000/api/health');
     const response = await GET(request);
 
@@ -31,10 +70,25 @@ describe('GET /api/health', () => {
     expect(typeof json.timestamp).toBe('string');
 
     expect(mockAdminDb.collection).not.toHaveBeenCalled();
+    expect(mockAdminAuth.verifyIdToken).not.toHaveBeenCalled();
   });
 
-  it('returns 200 OK with healthy readiness payload on deep probe when Firestore is reachable', async (): Promise<void> => {
+  it('returns 401 Unauthorized on deep probe when unauthenticated', async (): Promise<void> => {
     const request = new NextRequest('http://localhost:3000/api/health?deep=true');
+    const response = await GET(request);
+
+    expect(response.status).toBe(401);
+    const json = (await response.json()) as ApiErrorResponse;
+    expect(json.error).toBe('Unauthorized');
+    expect(json.data).toBeNull();
+  });
+
+  it('returns 200 OK with healthy readiness payload on deep probe when authenticated as admin and Firestore is reachable', async (): Promise<void> => {
+    const request = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
     const response = await GET(request);
 
     expect(response.status).toBe(200);
@@ -61,9 +115,13 @@ describe('GET /api/health', () => {
     vi.useFakeTimers();
     vi.setSystemTime(now);
 
-    setFirestoreError(new Error('Firestore connection timeout'));
+    setFirestoreQueryError(new Error('Firestore connection error'));
 
-    const request = new NextRequest('http://localhost:3000/api/health?deep=true');
+    const request = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
     const response = await GET(request);
 
     expect(response.status).toBe(503);
@@ -72,37 +130,89 @@ describe('GET /api/health', () => {
     expect(json.status).toBe('unhealthy');
     const firestoreCheck = json.checks.find((c) => c.name === 'firestore');
     expect(firestoreCheck?.status).toBe('unhealthy');
-    expect(firestoreCheck?.message).toBe('Firestore connection timeout');
+    expect(firestoreCheck?.message).toBe('Firestore connection error');
   });
 
-  it('serves cached readiness result within the 15s TTL window', async (): Promise<void> => {
-    const baseTime = Date.now() + 120_000;
+  it('returns 503 Service Unavailable when Firestore probe exceeds timeout limit', async (): Promise<void> => {
+    const now = Date.now() + 180_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    // Mock collection while preserving admin doc retrieval for verifyAdminToken
+    mockAdminDb.collection.mockImplementation((name: string): MockCollectionReference => {
+      const col = createMockCollection(name);
+      return {
+        ...col,
+        limit: (): MockQuery => ({
+          ...col,
+          get: (): Promise<never> => new Promise<never>(() => {}),
+        }),
+      };
+    });
+
+    const request = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
+
+    const responsePromise = GET(request);
+    await vi.advanceTimersByTimeAsync(FIRESTORE_PROBE_TIMEOUT_MS + 100);
+    const response = await responsePromise;
+
+    expect(response.status).toBe(503);
+    const json = (await response.json()) as ReadinessResponse;
+    expect(json.status).toBe('unhealthy');
+
+    const firestoreCheck = json.checks.find((c) => c.name === 'firestore');
+    expect(firestoreCheck?.status).toBe('unhealthy');
+    expect(firestoreCheck?.message).toContain('Firestore probe timed out');
+  });
+
+  it('serves cached readiness result within the 15s TTL window for authenticated admin', async (): Promise<void> => {
+    const baseTime = Date.now() + 300_000;
     vi.useFakeTimers();
     vi.setSystemTime(baseTime);
 
     mockAdminDb.collection.mockClear();
 
     // First deep request: fresh probe
-    const firstRequest = new NextRequest('http://localhost:3000/api/health?deep=true');
+    const firstRequest = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
     const firstResponse = await GET(firstRequest);
     expect(firstResponse.status).toBe(200);
     expect(firstResponse.headers.get('Cache-Control')).toBe('no-cache, no-store, must-revalidate');
     const initialCallCount = mockAdminDb.collection.mock.calls.length;
-    expect(initialCallCount).toBeGreaterThan(0);
+    // On first request: 1 call from verifyAdminToken ('admins') + 1 call from probe ('admins') = 2 calls
+    expect(initialCallCount).toBe(2);
 
     // Second deep request at 5 seconds: should hit cache
+    // verifyAdminToken runs (1 call to 'admins'), but probe does NOT run (0 calls).
     vi.advanceTimersByTime(5_000);
-    const secondRequest = new NextRequest('http://localhost:3000/api/health?deep=true');
+    const secondRequest = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
     const secondResponse = await GET(secondRequest);
     expect(secondResponse.status).toBe(200);
     expect(secondResponse.headers.get('Cache-Control')).toBe('public, max-age=15');
-    expect(mockAdminDb.collection.mock.calls.length).toBe(initialCallCount);
+    // Only verifyAdminToken was called (+1 call), probe was not re-executed
+    expect(mockAdminDb.collection.mock.calls.length).toBe(initialCallCount + 1);
 
     // Third deep request after 16 seconds (exceeding TTL): should re-execute probe
+    // verifyAdminToken runs (+1 call) AND probe re-runs (+1 call) = +2 calls
     vi.advanceTimersByTime(11_000);
-    const thirdRequest = new NextRequest('http://localhost:3000/api/health?deep=true');
+    const thirdRequest = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
     const thirdResponse = await GET(thirdRequest);
     expect(thirdResponse.status).toBe(200);
-    expect(mockAdminDb.collection.mock.calls.length).toBeGreaterThan(initialCallCount);
+    expect(mockAdminDb.collection.mock.calls.length).toBe(initialCallCount + 3);
   });
 });

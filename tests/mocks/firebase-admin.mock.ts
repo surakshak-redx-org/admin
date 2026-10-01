@@ -47,6 +47,7 @@ export interface MockCollectionReference extends MockQuery {
 let autoIdCounter = 0;
 const collectionDocsStore = new Map<string, Map<string, Record<string, unknown>>>();
 const collectionCountStore = new Map<string, number>();
+let firestoreQueryErrorToThrow: Error | null = null;
 let firestoreErrorToThrow: Error | null = null;
 
 export function resetFirestoreMocks(): void {
@@ -54,12 +55,17 @@ export function resetFirestoreMocks(): void {
   collectionDocsStore.clear();
   collectionCountStore.clear();
   firestoreErrorToThrow = null;
+  firestoreQueryErrorToThrow = null;
   mockAdminAuth.verifyIdToken.mockReset();
   mockAdminAuth.getUserByEmail.mockReset();
 }
 
 export function setFirestoreError(error: Error | null): void {
   firestoreErrorToThrow = error;
+}
+
+export function setFirestoreQueryError(error: Error | null): void {
+  firestoreQueryErrorToThrow = error;
 }
 
 export function setCollectionDocs(
@@ -145,8 +151,9 @@ function createMockQuery(collectionName: string): MockQuery {
     orderBy: (): MockQuery => query,
     limit: (): MockQuery => query,
     get: (): Promise<MockQuerySnapshot> => {
-      if (firestoreErrorToThrow) {
-        return Promise.reject(firestoreErrorToThrow);
+      const err = firestoreQueryErrorToThrow ?? firestoreErrorToThrow;
+      if (err) {
+        return Promise.reject(err);
       }
       const col = collectionDocsStore.get(collectionName);
       const docs: MockDocumentSnapshot[] = [];
@@ -167,8 +174,9 @@ function createMockQuery(collectionName: string): MockQuery {
     },
     count: (): { get: () => Promise<MockAggregateQuerySnapshot> } => ({
       get: (): Promise<MockAggregateQuerySnapshot> => {
-        if (firestoreErrorToThrow) {
-          return Promise.reject(firestoreErrorToThrow);
+        const err = firestoreQueryErrorToThrow ?? firestoreErrorToThrow;
+        if (err) {
+          return Promise.reject(err);
         }
         const explicitCount = collectionCountStore.get(collectionName);
         const actualSize = collectionDocsStore.get(collectionName)?.size ?? 0;

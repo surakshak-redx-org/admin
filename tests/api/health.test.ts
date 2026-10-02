@@ -199,7 +199,7 @@ describe('GET /api/health', () => {
     });
     const secondResponse = await GET(secondRequest);
     expect(secondResponse.status).toBe(200);
-    expect(secondResponse.headers.get('Cache-Control')).toBe('public, max-age=15');
+    expect(secondResponse.headers.get('Cache-Control')).toBe('private, max-age=15');
     // Only verifyAdminToken was called (+1 call), probe was not re-executed
     expect(mockAdminDb.collection.mock.calls.length).toBe(initialCallCount + 1);
 
@@ -214,5 +214,63 @@ describe('GET /api/health', () => {
     const thirdResponse = await GET(thirdRequest);
     expect(thirdResponse.status).toBe(200);
     expect(mockAdminDb.collection.mock.calls.length).toBe(initialCallCount + 3);
+  });
+
+  it('does not cache an unhealthy readiness result', async (): Promise<void> => {
+    const baseTime = Date.now() + 600_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(baseTime);
+
+    setFirestoreQueryError(new Error('Transient Firestore failure'));
+    const failingRequest = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
+    const failingResponse = await GET(failingRequest);
+    expect(failingResponse.status).toBe(503);
+
+    // Firestore recovers one second later; the next deep probe must re-run, not replay the 503.
+    vi.advanceTimersByTime(1_000);
+    setFirestoreQueryError(null);
+    const recoveredRequest = new NextRequest('http://localhost:3000/api/health?deep=true', {
+      headers: {
+        Authorization: `Bearer ${validAdminToken}`,
+      },
+    });
+    const recoveredResponse = await GET(recoveredRequest);
+    expect(recoveredResponse.status).toBe(200);
+    expect(recoveredResponse.headers.get('Cache-Control')).toBe(
+      'no-cache, no-store, must-revalidate',
+    );
+  });
+
+  it('reports APP_URL as missing when NEXT_PUBLIC_APP_URL is unset despite the ENV fallback', async (): Promise<void> => {
+    const baseTime = Date.now() + 900_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(baseTime);
+
+    const savedAppUrl = process.env.APP_URL;
+    const savedPublicAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+    delete process.env.APP_URL;
+    delete process.env.NEXT_PUBLIC_APP_URL;
+
+    try {
+      const request = new NextRequest('http://localhost:3000/api/health?deep=true', {
+        headers: {
+          Authorization: `Bearer ${validAdminToken}`,
+        },
+      });
+      const response = await GET(request);
+
+      expect(response.status).toBe(503);
+      const json = (await response.json()) as ReadinessResponse;
+      const configCheck = json.checks.find((c) => c.name === 'configuration');
+      expect(configCheck?.status).toBe('unhealthy');
+      expect(configCheck?.message).toContain('APP_URL');
+    } finally {
+      process.env.APP_URL = savedAppUrl;
+      process.env.NEXT_PUBLIC_APP_URL = savedPublicAppUrl;
+    }
   });
 });

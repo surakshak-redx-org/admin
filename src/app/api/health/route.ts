@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { FIRESTORE_PROBE_TIMEOUT_MS } from '@/constants/config';
 import { apiError } from '@/lib/api/response';
-import { verifyAdminToken } from '@/lib/auth/middleware';
+import type { verifyAdminToken as VerifyAdminToken } from '@/lib/auth/middleware';
 import type {
   DependencyCheckResult,
   DependencyStatus,
@@ -27,7 +27,7 @@ const BASE_TEN = 10;
 
 const HEADER_CACHE_CONTROL = 'Cache-Control';
 const CACHE_CONTROL_LIVE = 'no-cache, no-store, must-revalidate';
-const CACHE_CONTROL_CACHED = 'public, max-age=15';
+const CACHE_CONTROL_CACHED = 'private, max-age=15';
 
 const PARAM_DEEP = 'deep';
 const VALUE_TRUE = 'true';
@@ -44,6 +44,9 @@ const OVERALL_UNHEALTHY: HealthStatus = 'unhealthy';
 
 const LIVENESS_STATUS_OK = 'ok';
 
+const MESSAGE_UNAUTHORIZED = 'Unauthorized';
+const MESSAGE_AUTH_UNAVAILABLE = 'Service unavailable';
+
 const FIRESTORE_PROBE_LIMIT = 1;
 
 const REQUIRED_CONFIG_VARS: readonly string[] = [
@@ -52,6 +55,13 @@ const REQUIRED_CONFIG_VARS: readonly string[] = [
   'FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64',
   'APP_URL',
 ] as const;
+
+// Vars whose resolved ENV value has a built-in fallback, so presence must be
+// checked against the raw process.env value instead.
+const RAW_ONLY_CONFIG_VARS: ReadonlySet<string> = new Set([
+  'FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64',
+  'APP_URL',
+]);
 
 interface CachedReadiness {
   readonly response: ReadinessResponse;
@@ -124,6 +134,9 @@ async function checkFirestore(): Promise<DependencyCheckResult> {
     const collections = firestoreModule.COLLECTIONS;
 
     const probePromise = db.collection(collections.ADMINS).limit(FIRESTORE_PROBE_LIMIT).get();
+    // If the timeout wins the race, a late probe rejection must not surface as an
+    // unhandled rejection; the race below still observes the original promise.
+    void probePromise.catch((): void => undefined);
 
     let timerId: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<never>((_, reject): void => {
@@ -173,8 +186,8 @@ async function checkConfiguration(): Promise<DependencyCheckResult> {
 
   for (const varName of REQUIRED_CONFIG_VARS) {
     let isPresent = false;
-    if (varName === 'FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64') {
-      isPresent = Boolean(process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_BASE64);
+    if (RAW_ONLY_CONFIG_VARS.has(varName)) {
+      isPresent = Boolean(process.env[varName] ?? process.env[`NEXT_PUBLIC_${varName}`]);
     } else if (resolvedEnv && resolvedEnv[varName]) {
       isPresent = Boolean(resolvedEnv[varName]);
     } else {
@@ -273,9 +286,20 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   // Deep diagnostic health checks inspect internal operational parameters and downstream credentials.
   // Gated behind verifyAdminToken() to protect sensitive configuration and system metrics.
+  // Imported lazily so a Firebase Admin init failure cannot break the liveness path above.
+  let verifyAdminToken: typeof VerifyAdminToken;
+  try {
+    ({ verifyAdminToken } = await import('@/lib/auth/middleware'));
+  } catch {
+    // Caller is unauthenticated here, so report unavailability without any detail.
+    return apiError(MESSAGE_AUTH_UNAVAILABLE, HTTP_STATUS_SERVICE_UNAVAILABLE, {
+      [HEADER_CACHE_CONTROL]: CACHE_CONTROL_LIVE,
+    });
+  }
+
   const session = await verifyAdminToken(request);
   if (!session) {
-    return apiError('Unauthorized', HTTP_STATUS_UNAUTHORIZED);
+    return apiError(MESSAGE_UNAUTHORIZED, HTTP_STATUS_UNAUTHORIZED);
   }
 
   const now = Date.now();
@@ -291,11 +315,15 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const { response, httpStatus } = await buildReadinessResponse();
 
-  readinessCache = {
-    response,
-    httpStatus,
-    cachedAt: now,
-  };
+  // Only healthy results are cached so recovery from a transient failure is seen immediately.
+  readinessCache =
+    httpStatus === HTTP_STATUS_OK
+      ? {
+          response,
+          httpStatus,
+          cachedAt: now,
+        }
+      : null;
 
   return NextResponse.json(response, {
     status: httpStatus,

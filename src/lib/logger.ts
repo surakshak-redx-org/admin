@@ -1,7 +1,7 @@
-import { ENV } from '@/config/env';
 import type { LogContext, LogEntry, LogErrorDetails, LogLevel } from '@/types/observability.types';
 
 const SERVICE_NAME = 'surakshak-admin';
+const UNKNOWN_ENVIRONMENT = 'unknown';
 const LOG_LEVEL_DEBUG: LogLevel = 'debug';
 const LOG_LEVEL_INFO: LogLevel = 'info';
 const LOG_LEVEL_WARN: LogLevel = 'warn';
@@ -30,6 +30,13 @@ const RESERVED_CONTEXT_KEYS: ReadonlySet<string> = new Set([
   'error',
   'metadata',
 ]);
+
+// Read process.env directly rather than importing @/config/env: that module throws on
+// load when validation fails, and the error boundaries that use this logger must
+// still render in that case. NEXT_PUBLIC_APP_ENV is referenced literally so Next.js
+// inlines it into the client bundle.
+const ENVIRONMENT: string =
+  process.env.APP_ENV ?? process.env.NEXT_PUBLIC_APP_ENV ?? UNKNOWN_ENVIRONMENT;
 
 function safeStringify(value: unknown): string {
   try {
@@ -106,7 +113,7 @@ function buildLogEntry(
     level,
     message,
     service: SERVICE_NAME,
-    environment: ENV.APP_ENV,
+    environment: ENVIRONMENT,
   };
 
   if (!context) {
@@ -171,7 +178,7 @@ function serializeLogEntry(entry: LogEntry): string {
       level: LOG_LEVEL_ERROR,
       message: SERIALIZATION_ERROR_MESSAGE,
       service: SERVICE_NAME,
-      environment: ENV.APP_ENV,
+      environment: ENVIRONMENT,
       error: {
         name: SERIALIZATION_ERROR_NAME,
         message: errorDetails?.message ?? UNKNOWN_ERROR_MESSAGE,
@@ -181,7 +188,7 @@ function serializeLogEntry(entry: LogEntry): string {
     try {
       return JSON.stringify(fallbackEntry);
     } catch {
-      return `${FATAL_FALLBACK_PREFIX}${new Date().toISOString()}${FATAL_FALLBACK_SUFFIX}${ENV.APP_ENV}"}`;
+      return `${FATAL_FALLBACK_PREFIX}${new Date().toISOString()}${FATAL_FALLBACK_SUFFIX}${ENVIRONMENT}"}`;
     }
   }
 }

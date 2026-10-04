@@ -1,10 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import toast from 'react-hot-toast';
 
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Avatar } from '@/components/ui/Avatar';
@@ -21,56 +19,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/Table';
-import { apiFetch } from '@/lib/api/client';
+import { useAddAdminMutation, useAdminsQuery, useRemoveAdminMutation } from '@/hooks';
 import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { AdminUser } from '@/types/firestore.types';
-
-type ClientAdmin = Serialized<AdminUser>;
+import type { AdminUserWithId } from '@/services/admins.service';
 
 interface AddAdminFormValues {
   email: string;
 }
 
 export default function AdminsPage(): React.JSX.Element {
-  const { user, idToken } = useAuth();
-  const queryClient = useQueryClient();
-  const [removeAdmin, setRemoveAdmin] = useState<ClientAdmin | null>(null);
+  const { user } = useAuth();
+  const [removeAdmin, setRemoveAdmin] = useState<AdminUserWithId | null>(null);
   const { register, handleSubmit, reset } = useForm<AddAdminFormValues>({
     defaultValues: { email: '' },
   });
 
-  const adminsQuery = useQuery({
-    queryKey: ['admins'],
-    queryFn: () => apiFetch<ClientAdmin[]>('/api/admins', idToken ?? ''),
-    enabled: idToken !== null && user?.role === 'super_admin',
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['admins'] }).catch(() => undefined);
-  };
-
-  const addMutation = useMutation({
-    mutationFn: (email: string) =>
-      apiFetch('/api/admins', idToken ?? '', { method: 'POST', body: JSON.stringify({ email }) }),
-    onSuccess: () => {
-      toast.success('Admin added');
-      reset();
-      invalidate();
-    },
-    onError: (error: Error) => toast.error(error.message || 'No Surakshak account with this email'),
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: (uid: string) =>
-      apiFetch(`/api/admins/${uid}`, idToken ?? '', { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('Admin removed');
-      setRemoveAdmin(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to remove admin'),
-  });
+  const adminsQuery = useAdminsQuery();
+  const addMutation = useAddAdminMutation();
+  const removeMutation = useRemoveAdminMutation();
 
   if (user?.role !== 'super_admin') {
     return (
@@ -100,7 +66,7 @@ export default function AdminsPage(): React.JSX.Element {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(adminsQuery.data ?? []).map((admin) => (
+            {(adminsQuery.data ?? []).map((admin: AdminUserWithId): React.JSX.Element => (
               <TableRow key={admin.uid}>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -122,7 +88,7 @@ export default function AdminsPage(): React.JSX.Element {
                     size="sm"
                     variant="destructive"
                     disabled={admin.uid === user.uid}
-                    onClick={() => setRemoveAdmin(admin)}
+                    onClick={(): void => setRemoveAdmin(admin)}
                   >
                     Remove
                   </Button>
@@ -139,8 +105,14 @@ export default function AdminsPage(): React.JSX.Element {
         </CardHeader>
         <CardContent>
           <form
-            onSubmit={(event) =>
-              void handleSubmit((values) => addMutation.mutate(values.email))(event)
+            onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>
+              void handleSubmit((values: AddAdminFormValues): void => {
+                addMutation.mutate(values.email, {
+                  onSuccess: (): void => {
+                    reset();
+                  },
+                });
+              })(event)
             }
             className="flex items-end gap-3"
           >
@@ -155,12 +127,22 @@ export default function AdminsPage(): React.JSX.Element {
       {removeAdmin ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setRemoveAdmin(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setRemoveAdmin(null);
+            }
+          }}
           title={`Remove ${removeAdmin.displayName} as admin?`}
           description="They will lose access immediately."
           confirmLabel="Remove"
           isLoading={removeMutation.isPending}
-          onConfirm={() => removeMutation.mutate(removeAdmin.uid)}
+          onConfirm={(): void => {
+            removeMutation.mutate(removeAdmin.uid, {
+              onSuccess: (): void => {
+                setRemoveAdmin(null);
+              },
+            });
+          }}
         />
       ) : null}
     </div>

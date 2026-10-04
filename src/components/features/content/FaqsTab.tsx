@@ -1,11 +1,9 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import toast from 'react-hot-toast';
 import { z } from 'zod';
 
 import { useTogglePublished } from '@/components/features/content/useTogglePublished';
@@ -26,8 +24,7 @@ import {
 } from '@/components/ui/Table';
 import { Textarea } from '@/components/ui/Textarea';
 import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
+import { useDeleteFaqMutation, useFaqsQuery, useSaveFaqMutation } from '@/hooks';
 import type { FAQ } from '@/types/firestore.types';
 
 const faqSchema = z.object({
@@ -44,49 +41,12 @@ function truncate(text: string, length: number): string {
 }
 
 export function FaqsTab(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const [dialogFaq, setDialogFaq] = useState<FAQ | 'new' | null>(null);
   const [deleteFaq, setDeleteFaq] = useState<FAQ | null>(null);
-
-  const faqsQuery = useQuery({
-    queryKey: ['content', 'faqs'],
-    queryFn: () => apiFetch<FAQ[]>('/api/content/faqs', idToken ?? ''),
-    enabled: idToken !== null,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['content', 'faqs'] }).catch(() => undefined);
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: async (values: FaqFormValues & { id?: string }) => {
-      const body = JSON.stringify(values);
-      if (values.id) {
-        return apiFetch(`/api/content/faqs/${values.id}`, idToken ?? '', { method: 'PUT', body });
-      }
-      return apiFetch('/api/content/faqs', idToken ?? '', { method: 'POST', body });
-    },
-    onSuccess: () => {
-      toast.success('FAQ saved');
-      setDialogFaq(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to save FAQ'),
-  });
-
+  const faqsQuery = useFaqsQuery();
+  const saveMutation = useSaveFaqMutation();
+  const deleteMutation = useDeleteFaqMutation();
   const publish = useTogglePublished<FAQ>('faqs', 'FAQ');
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/content/faqs/${id}`, idToken ?? '', { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('FAQ deleted');
-      setDeleteFaq(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to delete FAQ'),
-  });
 
   if (faqsQuery.isLoading) {
     return (
@@ -100,7 +60,7 @@ export function FaqsTab(): React.JSX.Element {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-deep-ink">FAQ</h2>
-        <Button size="sm" onClick={() => setDialogFaq('new')}>
+        <Button size="sm" onClick={(): void => setDialogFaq('new')}>
           <Plus className="h-4 w-4" />
           Add FAQ
         </Button>
@@ -117,7 +77,7 @@ export function FaqsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(faqsQuery.data ?? []).map((faq) => (
+          {(faqsQuery.data ?? []).map((faq: FAQ): React.JSX.Element => (
             <TableRow key={faq.id}>
               <TableCell>{truncate(faq.question, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -126,17 +86,17 @@ export function FaqsTab(): React.JSX.Element {
               <TableCell>
                 <Switch
                   checked={faq.isPublished}
-                  onCheckedChange={(checked) => publish.toggle(faq.id, checked)}
+                  onCheckedChange={(checked: boolean): void => publish.toggle(faq.id, checked)}
                   disabled={publish.pendingId === faq.id}
                 />
               </TableCell>
               <TableCell>{faq.order}</TableCell>
               <TableCell>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setDialogFaq(faq)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDialogFaq(faq)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteFaq(faq)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDeleteFaq(faq)}>
                     <Trash2 className="h-4 w-4 text-error-red" />
                   </Button>
                 </div>
@@ -149,10 +109,14 @@ export function FaqsTab(): React.JSX.Element {
       {dialogFaq ? (
         <FaqFormDialog
           faq={dialogFaq === 'new' ? null : dialogFaq}
-          onClose={() => setDialogFaq(null)}
-          onSubmit={(values) =>
-            saveMutation.mutate({ ...values, id: dialogFaq === 'new' ? undefined : dialogFaq.id })
-          }
+          onClose={(): void => setDialogFaq(null)}
+          onSubmit={(values: FaqFormValues): void => {
+            saveMutation.mutate(dialogFaq === 'new' ? values : { ...values, id: dialogFaq.id }, {
+              onSuccess: (): void => {
+                setDialogFaq(null);
+              },
+            });
+          }}
           isSaving={saveMutation.isPending}
         />
       ) : null}
@@ -160,12 +124,22 @@ export function FaqsTab(): React.JSX.Element {
       {deleteFaq ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeleteFaq(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeleteFaq(null);
+            }
+          }}
           title="Delete this FAQ?"
           description="This permanently removes the FAQ from the app. This cannot be undone."
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
-          onConfirm={() => deleteMutation.mutate(deleteFaq.id)}
+          onConfirm={(): void => {
+            deleteMutation.mutate(deleteFaq.id, {
+              onSuccess: (): void => {
+                setDeleteFaq(null);
+              },
+            });
+          }}
         />
       ) : null}
     </div>
@@ -201,9 +175,19 @@ function FaqFormDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()} title={faq ? 'Edit FAQ' : 'Add FAQ'}>
+    <Dialog
+      open
+      onOpenChange={(open: boolean): void => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      title={faq ? 'Edit FAQ' : 'Add FAQ'}
+    >
       <form
-        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>
+          void handleSubmit(onSubmit)(event)
+        }
         className="flex flex-col gap-4"
       >
         <Input label="Question" {...register('question')} error={errors.question?.message} />
@@ -212,7 +196,7 @@ function FaqFormDialog({
         <Controller
           control={control}
           name="isPublished"
-          render={({ field }) => (
+          render={({ field }): React.JSX.Element => (
             <Switch label="Published" checked={field.value} onCheckedChange={field.onChange} />
           )}
         />

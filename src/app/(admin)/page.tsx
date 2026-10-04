@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import {
   AlertTriangle,
@@ -19,41 +18,22 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { apiFetch } from '@/lib/api/client';
+import { useRecentIncidentsQuery, useRecentUsersQuery, useStatsQuery } from '@/hooks';
 import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { DashboardStats, IncidentReport, SurakshakUser } from '@/types/firestore.types';
-
-interface UsersResponse {
-  users: (Serialized<SurakshakUser> & { id: string })[];
-  nextCursor: string | null;
-}
+import type { IncidentWithUser } from '@/services/incidents.service';
+import type { UsersListResponse } from '@/services/users.service';
 
 export default function DashboardPage(): React.JSX.Element {
-  const { user, idToken } = useAuth();
+  const { user } = useAuth();
 
-  const statsQuery = useQuery({
-    queryKey: ['stats'],
-    queryFn: () => apiFetch<DashboardStats>('/api/stats', idToken ?? ''),
-    enabled: idToken !== null,
-  });
-
-  const usersQuery = useQuery({
-    queryKey: ['users', 'recent'],
-    queryFn: () => apiFetch<UsersResponse>('/api/users', idToken ?? ''),
-    enabled: idToken !== null,
-  });
-
-  const incidentsQuery = useQuery({
-    queryKey: ['incidents', 'recent'],
-    queryFn: () => apiFetch<Serialized<IncidentReport>[]>('/api/incidents', idToken ?? ''),
-    enabled: idToken !== null,
-  });
+  const statsQuery = useStatsQuery();
+  const usersQuery = useRecentUsersQuery(5);
+  const incidentsQuery = useRecentIncidentsQuery(10);
 
   const stats = statsQuery.data;
-  const recentUsers = usersQuery.data?.users.slice(0, 5) ?? [];
-  const recentIncidents = (incidentsQuery.data ?? [])
-    .filter((incident) => incident.status !== 'resolved')
+  const recentUsers: UsersListResponse['users'] = usersQuery.data?.users.slice(0, 5) ?? [];
+  const recentIncidents: IncidentWithUser[] = (incidentsQuery.data ?? [])
+    .filter((incident: IncidentWithUser): boolean => incident.status !== 'resolved')
     .slice(0, 5);
 
   return (
@@ -140,7 +120,7 @@ export default function DashboardPage(): React.JSX.Element {
             {recentUsers.length === 0 ? (
               <p className="text-sm text-stone">No users yet.</p>
             ) : (
-              recentUsers.map((recentUser) => (
+              recentUsers.map((recentUser): React.JSX.Element => (
                 <div key={recentUser.id} className="flex items-center gap-3">
                   <Avatar name={recentUser.name} size="sm" />
                   <div className="min-w-0 flex-1">
@@ -164,7 +144,7 @@ export default function DashboardPage(): React.JSX.Element {
             {recentIncidents.length === 0 ? (
               <p className="text-sm text-stone">No open incidents.</p>
             ) : (
-              recentIncidents.map((incident) => (
+              recentIncidents.map((incident): React.JSX.Element => (
                 <div key={incident.id} className="flex items-center justify-between gap-3">
                   <p className="min-w-0 flex-1 truncate text-sm font-medium text-deep-ink">
                     {incident.title}

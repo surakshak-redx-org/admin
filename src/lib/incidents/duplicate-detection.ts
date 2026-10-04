@@ -142,10 +142,7 @@ class DisjointSet {
   }
 }
 
-function categoriesConflict(
-  categoryA: string | undefined,
-  categoryB: string | undefined,
-): boolean {
+function categoriesConflict(categoryA: string | undefined, categoryB: string | undefined): boolean {
   return categoryA !== undefined && categoryB !== undefined && categoryA !== categoryB;
 }
 

@@ -8,6 +8,7 @@ import { Controller, useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { z } from 'zod';
 
+import { useTogglePublished } from '@/components/features/content/useTogglePublished';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -74,19 +75,7 @@ export function TipsTab(): React.JSX.Element {
     onError: () => toast.error('Failed to save safety tip'),
   });
 
-  const toggleMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ id: string; isPublished: boolean }>(`/api/content/tips/${id}`, idToken ?? '', {
-        method: 'PATCH',
-      }),
-    onSuccess: ({ id, isPublished }) => {
-      queryClient.setQueryData<SafetyTip[]>(
-        ['content', 'tips'],
-        (current) => current?.map((tip) => (tip.id === id ? { ...tip, isPublished } : tip)) ?? [],
-      );
-    },
-    onError: () => toast.error('Failed to update safety tip'),
-  });
+  const publish = useTogglePublished<SafetyTip>('tips', 'Tip');
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
@@ -137,8 +126,8 @@ export function TipsTab(): React.JSX.Element {
               <TableCell>
                 <Switch
                   checked={tip.isPublished}
-                  onCheckedChange={() => toggleMutation.mutate(tip.id)}
-                  disabled={toggleMutation.isPending}
+                  onCheckedChange={(checked) => publish.toggle(tip.id, checked)}
+                  disabled={publish.pendingId === tip.id}
                 />
               </TableCell>
               <TableCell>{tip.order}</TableCell>

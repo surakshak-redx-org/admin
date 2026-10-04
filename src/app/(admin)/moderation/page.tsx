@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 
@@ -21,6 +21,7 @@ import {
   TableRow,
 } from '@/components/ui/Table';
 import {
+  COMMUNITY_REPORT_HIDE_THRESHOLD,
   CONTENT_PREVIEW_LENGTH,
   QUERY_ALWAYS_STALE_TIME_MS,
   REPORT_COUNT_DANGER_THRESHOLD,
@@ -86,17 +87,34 @@ export default function ModerationPage(): React.JSX.Element {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold text-deep-ink">Moderation</h1>
+      {/* What this queue is was never stated anywhere on the page (BUG-009). */}
+      <div>
+        <h1 className="text-2xl font-semibold text-deep-ink">Reported Posts</h1>
+        <p className="mt-1 max-w-3xl text-sm text-stone">
+          Community posts are hidden from the app automatically once{' '}
+          {COMMUNITY_REPORT_HIDE_THRESHOLD} users report them. Review each one:{' '}
+          <span className="font-medium">Restore</span> makes it visible again and clears its
+          reports; <span className="font-medium">Delete</span> removes it permanently.
+        </p>
+      </div>
 
       {postsQuery.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner size="lg" />
         </div>
+      ) : postsQuery.isError ? (
+        <EmptyState
+          icon={AlertCircle}
+          iconClassName="h-10 w-10 text-error-red"
+          title="Couldn't load reported posts"
+          subtitle="Refresh the page to try again."
+        />
       ) : posts.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
           iconClassName="h-10 w-10 text-forest-green"
           title="All clear — no posts need review"
+          subtitle="Posts appear here once they are hidden by user reports."
         />
       ) : (
         <Table>
@@ -168,7 +186,7 @@ export default function ModerationPage(): React.JSX.Element {
           open
           onOpenChange={(open) => !open && setDeletePost(null)}
           title="Permanently delete this post?"
-          description="Cannot be undone."
+          description="The post and its report history are removed for everyone. This cannot be undone."
           confirmLabel="Delete"
           isLoading={actionMutation.isPending}
           onConfirm={() => actionMutation.mutate({ id: deletePost.id, action: 'delete' })}

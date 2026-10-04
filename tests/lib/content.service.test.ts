@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createOrderedContent,
   deleteContent,
+  applyPublishPatch,
   listOrderedContent,
+  setContentPublished,
   toggleContentPublished,
   updateContent,
 } from '@/lib/content/content.service';
@@ -131,6 +133,57 @@ describe('Content Service', () => {
 
       const items = await listOrderedContent<SampleContent>(collectionName);
       expect(items[0]?.isPublished).toBe(true);
+    });
+  });
+
+  describe('setContentPublished', () => {
+    it('writes the requested state without reading first', async (): Promise<void> => {
+      setCollectionDocs(collectionName, [
+        { id: 'set-1', data: { title: 'Tip C', order: 0, isPublished: true } },
+      ]);
+
+      await expect(setContentPublished(collectionName, 'set-1', true)).resolves.toBe(true);
+
+      const items = await listOrderedContent<SampleContent>(collectionName);
+      expect(items[0]?.isPublished).toBe(true);
+    });
+  });
+
+  describe('applyPublishPatch', () => {
+    const patch = (body?: unknown): Request =>
+      new Request('http://localhost/api/content/tips/x', {
+        method: 'PATCH',
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+
+    it('sets the target state sent by the client', async (): Promise<void> => {
+      setCollectionDocs(collectionName, [
+        { id: 'p-1', data: { title: 'Tip D', order: 0, isPublished: false } },
+      ]);
+
+      await expect(
+        applyPublishPatch(patch({ isPublished: true }), collectionName, 'p-1'),
+      ).resolves.toBe(true);
+      const items = await listOrderedContent<SampleContent>(collectionName);
+      expect(items[0]?.isPublished).toBe(true);
+    });
+
+    it('falls back to a toggle for a request without a body', async (): Promise<void> => {
+      setCollectionDocs(collectionName, [
+        { id: 'p-2', data: { title: 'Tip E', order: 0, isPublished: true } },
+      ]);
+
+      await expect(applyPublishPatch(patch(), collectionName, 'p-2')).resolves.toBe(false);
+    });
+
+    it('falls back to a toggle when isPublished is not a boolean', async (): Promise<void> => {
+      setCollectionDocs(collectionName, [
+        { id: 'p-3', data: { title: 'Tip F', order: 0, isPublished: false } },
+      ]);
+
+      await expect(
+        applyPublishPatch(patch({ isPublished: 'yes' }), collectionName, 'p-3'),
+      ).resolves.toBe(true);
     });
   });
 });

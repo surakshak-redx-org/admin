@@ -50,3 +50,35 @@ export async function toggleContentPublished(collection: string, id: string): Pr
   await ref.update({ isPublished: next });
   return next;
 }
+
+/** Sets `isPublished` to a known value with a single write (no read first). */
+export async function setContentPublished(
+  collection: string,
+  id: string,
+  isPublished: boolean,
+): Promise<boolean> {
+  await adminDb.collection(collection).doc(id).update({ isPublished });
+  return isPublished;
+}
+
+/**
+ * Applies a publish PATCH: sets the target state when the body carries
+ * `{ isPublished: boolean }`, otherwise falls back to a toggle (older
+ * clients send no body).
+ */
+export async function applyPublishPatch(
+  request: Request,
+  collection: string,
+  id: string,
+): Promise<boolean> {
+  const body: unknown = await request.json().catch(() => null);
+  if (
+    typeof body === 'object' &&
+    body !== null &&
+    'isPublished' in body &&
+    typeof body.isPublished === 'boolean'
+  ) {
+    return setContentPublished(collection, id, body.isPublished);
+  }
+  return toggleContentPublished(collection, id);
+}

@@ -9,6 +9,7 @@ import { Controller, useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { z } from 'zod';
 
+import { useTogglePublished } from '@/components/features/content/useTogglePublished';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -67,7 +68,11 @@ export function NewsTab(): React.JSX.Element {
 
   const saveMutation = useMutation({
     mutationFn: async (values: NewsFormValues & { id?: string }) => {
-      const body = JSON.stringify(values);
+      // `datetime-local` has no timezone; converting here, in the admin's
+      // browser, keeps an IST time from being read as UTC on the server.
+      const publishedAt =
+        values.publishedAt === '' ? values.publishedAt : new Date(values.publishedAt).toISOString();
+      const body = JSON.stringify({ ...values, publishedAt });
       if (values.id) {
         return apiFetch(`/api/content/news/${values.id}`, idToken ?? '', { method: 'PUT', body });
       }
@@ -81,20 +86,7 @@ export function NewsTab(): React.JSX.Element {
     onError: () => toast.error('Failed to save news item'),
   });
 
-  const toggleMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ id: string; isPublished: boolean }>(`/api/content/news/${id}`, idToken ?? '', {
-        method: 'PATCH',
-      }),
-    onSuccess: ({ id, isPublished }) => {
-      queryClient.setQueryData<ClientNewsItem[]>(
-        ['content', 'news'],
-        (current) =>
-          current?.map((item) => (item.id === id ? { ...item, isPublished } : item)) ?? [],
-      );
-    },
-    onError: () => toast.error('Failed to update news item'),
-  });
+  const publish = useTogglePublished<ClientNewsItem>('news', 'News item');
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
@@ -145,8 +137,8 @@ export function NewsTab(): React.JSX.Element {
               <TableCell>
                 <Switch
                   checked={news.isPublished}
-                  onCheckedChange={() => toggleMutation.mutate(news.id)}
-                  disabled={toggleMutation.isPending}
+                  onCheckedChange={(checked) => publish.toggle(news.id, checked)}
+                  disabled={publish.pendingId === news.id}
                 />
               </TableCell>
               <TableCell>{format(new Date(news.publishedAt), 'PP')}</TableCell>

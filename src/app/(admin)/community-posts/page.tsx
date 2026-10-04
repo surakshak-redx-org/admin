@@ -1,11 +1,9 @@
 'use client';
 
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import { useMemo, useState } from 'react';
-import toast from 'react-hot-toast';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -27,8 +25,7 @@ import {
   COMMUNITY_POST_STATUSES,
   LOCATION_URL_PREFIX,
 } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
+import { useCommunityPostsInfiniteQuery, useDeleteCommunityPostMutation } from '@/hooks';
 import type { Serialized } from '@/types/api.types';
 import type { CommunityPost, PostType } from '@/types/firestore.types';
 
@@ -78,37 +75,15 @@ function isSupportedLocationUrl(url: string): boolean {
   return url.startsWith(LOCATION_URL_PREFIX);
 }
 
-function buildPostsUrl(
-  sort: CommunityPostSort,
-  status: CommunityPostStatus,
-  cursor: string | null,
-): string {
-  const params = new URLSearchParams({ sort, status });
-  if (cursor) params.set('cursor', cursor);
-  return `/api/community-posts?${params.toString()}`;
-}
-
 export default function CommunityPostsPage(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<CommunityPostStatus>('all');
   const [sortBy, setSortBy] = useState<CommunityPostSort>('newest');
   const [selectedPost, setSelectedPost] = useState<ClientPost | null>(null);
   const [postToDelete, setPostToDelete] = useState<ClientPost | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
-  const postsQuery = useInfiniteQuery({
-    queryKey: ['community-posts', sortBy, statusFilter],
-    queryFn: ({ pageParam }): Promise<{ posts: ClientPost[]; nextCursor: string | null }> =>
-      apiFetch<{ posts: ClientPost[]; nextCursor: string | null }>(
-        buildPostsUrl(sortBy, statusFilter, pageParam),
-        idToken ?? '',
-      ),
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    enabled: idToken !== null,
-  });
+  const postsQuery = useCommunityPostsInfiniteQuery(sortBy, statusFilter);
+  const deleteMutation = useDeleteCommunityPostMutation();
 
   const posts = useMemo(
     () => postsQuery.data?.pages.flatMap((page) => page.posts) ?? [],
@@ -129,27 +104,13 @@ export default function CommunityPostsPage(): React.JSX.Element {
     );
   }, [posts, search]);
 
-  const handleDelete = async (): Promise<void> => {
+  const handleDelete = (): void => {
     if (!postToDelete) return;
-
-    setIsDeleting(true);
-
-    try {
-      await apiFetch(`/api/community-posts/${postToDelete.id}`, idToken ?? '', {
-        method: 'DELETE',
-      });
-
-      await postsQuery.refetch();
-      await queryClient.invalidateQueries({ queryKey: ['moderation'] });
-      await queryClient.invalidateQueries({ queryKey: ['stats'] });
-      setPostToDelete(null);
-    } catch {
-      await postsQuery.refetch();
-      setPostToDelete(null);
-      toast.error('Failed to delete post');
-    } finally {
-      setIsDeleting(false);
-    }
+    deleteMutation.mutate(postToDelete.id, {
+      onSettled: () => {
+        setPostToDelete(null);
+      },
+    });
   };
 
   return (
@@ -405,18 +366,20 @@ export default function CommunityPostsPage(): React.JSX.Element {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setPostToDelete(null)} disabled={isDeleting}>
+              <Button
+                variant="outline"
+                onClick={() => setPostToDelete(null)}
+                disabled={deleteMutation.isPending}
+              >
                 Cancel
               </Button>
 
               <Button
                 variant="destructive"
-                onClick={() => {
-                  void handleDelete();
-                }}
-                disabled={isDeleting}
+                onClick={handleDelete}
+                isLoading={deleteMutation.isPending}
               >
-                {isDeleting ? 'Deleting...' : 'Delete'}
+                Delete
               </Button>
             </div>
           </div>

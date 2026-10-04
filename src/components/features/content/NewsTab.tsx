@@ -1,12 +1,10 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import toast from 'react-hot-toast';
 import { z } from 'zod';
 
 import { useTogglePublished } from '@/components/features/content/useTogglePublished';
@@ -27,12 +25,8 @@ import {
 } from '@/components/ui/Table';
 import { Textarea } from '@/components/ui/Textarea';
 import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { NewsItem } from '@/types/firestore.types';
-
-type ClientNewsItem = Serialized<NewsItem> & { id: string };
+import { useDeleteNewsMutation, useNewsQuery, useSaveNewsMutation } from '@/hooks';
+import type { NewsItemWithId } from '@/services/content.service';
 
 const newsSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -51,53 +45,13 @@ function truncate(text: string, length: number): string {
 }
 
 export function NewsTab(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
-  const [dialogNews, setDialogNews] = useState<ClientNewsItem | 'new' | null>(null);
-  const [deleteNews, setDeleteNews] = useState<ClientNewsItem | null>(null);
+  const [dialogNews, setDialogNews] = useState<NewsItemWithId | 'new' | null>(null);
+  const [deleteNews, setDeleteNews] = useState<NewsItemWithId | null>(null);
 
-  const newsQuery = useQuery({
-    queryKey: ['content', 'news'],
-    queryFn: () => apiFetch<ClientNewsItem[]>('/api/content/news', idToken ?? ''),
-    enabled: idToken !== null,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['content', 'news'] }).catch(() => undefined);
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: async (values: NewsFormValues & { id?: string }) => {
-      // `datetime-local` has no timezone; converting here, in the admin's
-      // browser, keeps an IST time from being read as UTC on the server.
-      const publishedAt =
-        values.publishedAt === '' ? values.publishedAt : new Date(values.publishedAt).toISOString();
-      const body = JSON.stringify({ ...values, publishedAt });
-      if (values.id) {
-        return apiFetch(`/api/content/news/${values.id}`, idToken ?? '', { method: 'PUT', body });
-      }
-      return apiFetch('/api/content/news', idToken ?? '', { method: 'POST', body });
-    },
-    onSuccess: () => {
-      toast.success('News item saved');
-      setDialogNews(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to save news item'),
-  });
-
-  const publish = useTogglePublished<ClientNewsItem>('news', 'News item');
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/content/news/${id}`, idToken ?? '', { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('News item deleted');
-      setDeleteNews(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to delete news item'),
-  });
+  const newsQuery = useNewsQuery();
+  const saveMutation = useSaveNewsMutation();
+  const deleteMutation = useDeleteNewsMutation();
+  const publish = useTogglePublished<NewsItemWithId>('news', 'News item');
 
   if (newsQuery.isLoading) {
     return (
@@ -111,7 +65,7 @@ export function NewsTab(): React.JSX.Element {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-deep-ink">News</h2>
-        <Button size="sm" onClick={() => setDialogNews('new')}>
+        <Button size="sm" onClick={(): void => setDialogNews('new')}>
           <Plus className="h-4 w-4" />
           Add News
         </Button>
@@ -128,7 +82,7 @@ export function NewsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(newsQuery.data ?? []).map((news) => (
+          {(newsQuery.data ?? []).map((news: NewsItemWithId): React.JSX.Element => (
             <TableRow key={news.id}>
               <TableCell>{truncate(news.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -137,17 +91,17 @@ export function NewsTab(): React.JSX.Element {
               <TableCell>
                 <Switch
                   checked={news.isPublished}
-                  onCheckedChange={(checked) => publish.toggle(news.id, checked)}
+                  onCheckedChange={(checked: boolean): void => publish.toggle(news.id, checked)}
                   disabled={publish.pendingId === news.id}
                 />
               </TableCell>
               <TableCell>{format(new Date(news.publishedAt), 'PP')}</TableCell>
               <TableCell>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setDialogNews(news)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDialogNews(news)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteNews(news)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDeleteNews(news)}>
                     <Trash2 className="h-4 w-4 text-error-red" />
                   </Button>
                 </div>
@@ -160,10 +114,24 @@ export function NewsTab(): React.JSX.Element {
       {dialogNews ? (
         <NewsFormDialog
           news={dialogNews === 'new' ? null : dialogNews}
-          onClose={() => setDialogNews(null)}
-          onSubmit={(values) =>
-            saveMutation.mutate({ ...values, id: dialogNews === 'new' ? undefined : dialogNews.id })
-          }
+          onClose={(): void => setDialogNews(null)}
+          onSubmit={(values: NewsFormValues): void => {
+            // `datetime-local` has no timezone; converting here, in the admin's
+            // browser, keeps an IST time from being read as UTC on the server.
+            const publishedAt =
+              values.publishedAt === ''
+                ? values.publishedAt
+                : new Date(values.publishedAt).toISOString();
+            const payload = { ...values, publishedAt };
+            saveMutation.mutate(
+              dialogNews === 'new' ? payload : { ...payload, id: dialogNews.id },
+              {
+                onSuccess: (): void => {
+                  setDialogNews(null);
+                },
+              },
+            );
+          }}
           isSaving={saveMutation.isPending}
         />
       ) : null}
@@ -171,12 +139,22 @@ export function NewsTab(): React.JSX.Element {
       {deleteNews ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeleteNews(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeleteNews(null);
+            }
+          }}
           title="Delete this news item?"
           description="This permanently removes the news item from the app. This cannot be undone."
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
-          onConfirm={() => deleteMutation.mutate(deleteNews.id)}
+          onConfirm={(): void => {
+            deleteMutation.mutate(deleteNews.id, {
+              onSuccess: (): void => {
+                setDeleteNews(null);
+              },
+            });
+          }}
         />
       ) : null}
     </div>
@@ -184,7 +162,7 @@ export function NewsTab(): React.JSX.Element {
 }
 
 interface NewsFormDialogProps {
-  news: ClientNewsItem | null;
+  news: NewsItemWithId | null;
   onClose: () => void;
   onSubmit: (values: NewsFormValues) => void;
   isSaving: boolean;
@@ -219,11 +197,17 @@ function NewsFormDialog({
   return (
     <Dialog
       open
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open: boolean): void => {
+        if (!open) {
+          onClose();
+        }
+      }}
       title={news ? 'Edit News' : 'Add News'}
     >
       <form
-        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>
+          void handleSubmit(onSubmit)(event)
+        }
         className="flex flex-col gap-4"
       >
         <Input label="Title" {...register('title')} error={errors.title?.message} />
@@ -240,7 +224,7 @@ function NewsFormDialog({
         <Controller
           control={control}
           name="isPublished"
-          render={({ field }) => (
+          render={({ field }): React.JSX.Element => (
             <Switch label="Published" checked={field.value} onCheckedChange={field.onChange} />
           )}
         />

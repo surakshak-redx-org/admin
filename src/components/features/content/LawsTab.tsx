@@ -1,11 +1,9 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import toast from 'react-hot-toast';
 import { z } from 'zod';
 
 import { useTogglePublished } from '@/components/features/content/useTogglePublished';
@@ -26,8 +24,7 @@ import {
 } from '@/components/ui/Table';
 import { Textarea } from '@/components/ui/Textarea';
 import { SHORT_DESCRIPTION_MAX_LENGTH, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
+import { useDeleteLawMutation, useLawsQuery, useSaveLawMutation } from '@/hooks';
 import type { Law } from '@/types/firestore.types';
 
 const lawSchema = z.object({
@@ -49,53 +46,12 @@ function truncate(text: string, length: number): string {
 }
 
 export function LawsTab(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const [dialogLaw, setDialogLaw] = useState<Law | 'new' | null>(null);
   const [deleteLaw, setDeleteLaw] = useState<Law | null>(null);
-
-  const lawsQuery = useQuery({
-    queryKey: ['content', 'laws'],
-    queryFn: () => apiFetch<Law[]>('/api/content/laws', idToken ?? ''),
-    enabled: idToken !== null,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['content', 'laws'] }).catch(() => undefined);
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: async (values: LawFormValues & { id?: string }) => {
-      const tags = values.tags
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean);
-      const body = JSON.stringify({ ...values, tags });
-      if (values.id) {
-        return apiFetch(`/api/content/laws/${values.id}`, idToken ?? '', { method: 'PUT', body });
-      }
-      return apiFetch('/api/content/laws', idToken ?? '', { method: 'POST', body });
-    },
-    onSuccess: () => {
-      toast.success('Law saved');
-      setDialogLaw(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to save law'),
-  });
-
+  const lawsQuery = useLawsQuery();
+  const saveMutation = useSaveLawMutation();
+  const deleteMutation = useDeleteLawMutation();
   const publish = useTogglePublished<Law>('laws', 'Law');
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/content/laws/${id}`, idToken ?? '', { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('Law deleted');
-      setDeleteLaw(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to delete law'),
-  });
 
   if (lawsQuery.isLoading) {
     return (
@@ -109,7 +65,7 @@ export function LawsTab(): React.JSX.Element {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-deep-ink">Laws</h2>
-        <Button size="sm" onClick={() => setDialogLaw('new')}>
+        <Button size="sm" onClick={(): void => setDialogLaw('new')}>
           <Plus className="h-4 w-4" />
           Add Law
         </Button>
@@ -126,7 +82,7 @@ export function LawsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(lawsQuery.data ?? []).map((law) => (
+          {(lawsQuery.data ?? []).map((law: Law): React.JSX.Element => (
             <TableRow key={law.id}>
               <TableCell>{truncate(law.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -135,17 +91,17 @@ export function LawsTab(): React.JSX.Element {
               <TableCell>
                 <Switch
                   checked={law.isPublished}
-                  onCheckedChange={(checked) => publish.toggle(law.id, checked)}
+                  onCheckedChange={(checked: boolean): void => publish.toggle(law.id, checked)}
                   disabled={publish.pendingId === law.id}
                 />
               </TableCell>
               <TableCell>{law.order}</TableCell>
               <TableCell>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setDialogLaw(law)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDialogLaw(law)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteLaw(law)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDeleteLaw(law)}>
                     <Trash2 className="h-4 w-4 text-error-red" />
                   </Button>
                 </div>
@@ -158,10 +114,21 @@ export function LawsTab(): React.JSX.Element {
       {dialogLaw ? (
         <LawFormDialog
           law={dialogLaw === 'new' ? null : dialogLaw}
-          onClose={() => setDialogLaw(null)}
-          onSubmit={(values) =>
-            saveMutation.mutate({ ...values, id: dialogLaw === 'new' ? undefined : dialogLaw.id })
-          }
+          onClose={(): void => setDialogLaw(null)}
+          onSubmit={(values: LawFormValues): void => {
+            const tags = values.tags
+              .split(',')
+              .map((tag: string): string => tag.trim())
+              .filter(Boolean);
+            saveMutation.mutate(
+              dialogLaw === 'new' ? { ...values, tags } : { ...values, tags, id: dialogLaw.id },
+              {
+                onSuccess: (): void => {
+                  setDialogLaw(null);
+                },
+              },
+            );
+          }}
           isSaving={saveMutation.isPending}
         />
       ) : null}
@@ -169,12 +136,22 @@ export function LawsTab(): React.JSX.Element {
       {deleteLaw ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeleteLaw(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeleteLaw(null);
+            }
+          }}
           title="Delete this law?"
           description="This permanently removes the law from the app. This cannot be undone."
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
-          onConfirm={() => deleteMutation.mutate(deleteLaw.id)}
+          onConfirm={(): void => {
+            deleteMutation.mutate(deleteLaw.id, {
+              onSuccess: (): void => {
+                setDeleteLaw(null);
+              },
+            });
+          }}
         />
       ) : null}
     </div>
@@ -212,9 +189,19 @@ function LawFormDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()} title={law ? 'Edit Law' : 'Add Law'}>
+    <Dialog
+      open
+      onOpenChange={(open: boolean): void => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      title={law ? 'Edit Law' : 'Add Law'}
+    >
       <form
-        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>
+          void handleSubmit(onSubmit)(event)
+        }
         className="flex flex-col gap-4"
       >
         <Input label="Title" {...register('title')} error={errors.title?.message} />
@@ -234,7 +221,7 @@ function LawFormDialog({
         <Controller
           control={control}
           name="isPublished"
-          render={({ field }) => (
+          render={({ field }): React.JSX.Element => (
             <Switch label="Published" checked={field.value} onCheckedChange={field.onChange} />
           )}
         />

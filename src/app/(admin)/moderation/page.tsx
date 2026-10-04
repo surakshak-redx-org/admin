@@ -1,10 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
-import toast from 'react-hot-toast';
 
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
@@ -23,15 +21,11 @@ import {
 import {
   COMMUNITY_REPORT_HIDE_THRESHOLD,
   CONTENT_PREVIEW_LENGTH,
-  QUERY_ALWAYS_STALE_TIME_MS,
   REPORT_COUNT_DANGER_THRESHOLD,
 } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { CommunityPost, PostType } from '@/types/firestore.types';
-
-type ClientPost = Serialized<CommunityPost> & { id: string };
+import { useModerationActionMutation, useModerationPostsQuery } from '@/hooks';
+import type { ModerationPost } from '@/services/moderation.service';
+import type { PostType } from '@/types/firestore.types';
 
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
@@ -45,43 +39,11 @@ function truncate(text: string, length: number): string {
 }
 
 export default function ModerationPage(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
-  const [restorePost, setRestorePost] = useState<ClientPost | null>(null);
-  const [deletePost, setDeletePost] = useState<ClientPost | null>(null);
+  const [restorePost, setRestorePost] = useState<ModerationPost | null>(null);
+  const [deletePost, setDeletePost] = useState<ModerationPost | null>(null);
 
-  const postsQuery = useQuery({
-    queryKey: ['moderation'],
-    queryFn: () => apiFetch<ClientPost[]>('/api/moderation', idToken ?? ''),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['moderation'] }).catch(() => undefined);
-
-    queryClient.invalidateQueries({ queryKey: ['community-posts'] }).catch(() => undefined);
-  };
-
-  const actionMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'restore' | 'delete' }) =>
-      apiFetch(`/api/moderation/${id}`, idToken ?? '', {
-        method: 'PATCH',
-        body: JSON.stringify({ action }),
-      }),
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.action === 'restore'
-          ? 'Post restored and visible again'
-          : 'Post permanently deleted',
-      );
-      setRestorePost(null);
-      setDeletePost(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to update post'),
-  });
+  const postsQuery = useModerationPostsQuery();
+  const actionMutation = useModerationActionMutation();
 
   const posts = postsQuery.data ?? [];
 
@@ -130,7 +92,7 @@ export default function ModerationPage(): React.JSX.Element {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {posts.map((post) => (
+            {posts.map((post): React.JSX.Element => (
               <TableRow key={post.id}>
                 <TableCell className="max-w-xs">
                   {truncate(post.content, CONTENT_PREVIEW_LENGTH)}
@@ -154,10 +116,14 @@ export default function ModerationPage(): React.JSX.Element {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setRestorePost(post)}>
+                    <Button size="sm" onClick={(): void => setRestorePost(post)}>
                       Restore
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => setDeletePost(post)}>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={(): void => setDeletePost(post)}
+                    >
                       Delete
                     </Button>
                   </div>
@@ -171,25 +137,51 @@ export default function ModerationPage(): React.JSX.Element {
       {restorePost ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setRestorePost(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setRestorePost(null);
+            }
+          }}
           title="Restore this post?"
           description="This will make the post visible again and reset report count."
           confirmLabel="Restore"
           confirmVariant="default"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: restorePost.id, action: 'restore' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: restorePost.id, action: 'restore' },
+              {
+                onSuccess: (): void => {
+                  setRestorePost(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
 
       {deletePost ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeletePost(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeletePost(null);
+            }
+          }}
           title="Permanently delete this post?"
           description="The post and its report history are removed for everyone. This cannot be undone."
           confirmLabel="Delete"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: deletePost.id, action: 'delete' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: deletePost.id, action: 'delete' },
+              {
+                onSuccess: (): void => {
+                  setDeletePost(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
     </div>

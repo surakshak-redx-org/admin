@@ -1,12 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { Search } from 'lucide-react';
 import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import toast from 'react-hot-toast';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -27,25 +25,10 @@ import {
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/Textarea';
-import {
-  QUERY_ALWAYS_STALE_TIME_MS,
-  SEARCH_DEBOUNCE_MS,
-  TITLE_TRUNCATE_LENGTH,
-} from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type {
-  IncidentCategory,
-  IncidentReport,
-  IncidentStatus,
-  SurakshakUser,
-} from '@/types/firestore.types';
-
-type ClientIncident = Serialized<IncidentReport> & {
-  id: string;
-  user: Pick<SurakshakUser, 'name' | 'city'> | null;
-};
+import { SEARCH_DEBOUNCE_MS, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
+import { useDebouncedValue, useIncidentsQuery, useUpdateIncidentMutation } from '@/hooks';
+import type { IncidentWithUser } from '@/services/incidents.service';
+import type { IncidentCategory, IncidentStatus } from '@/types/firestore.types';
 
 type FilterValue = IncidentStatus | 'all';
 
@@ -78,7 +61,10 @@ const CATEGORY_LABELS: Record<IncidentCategory, string> = {
 
 const CATEGORY_FILTER_OPTIONS: SelectOption[] = [
   { value: 'all', label: 'All Categories' },
-  ...Object.entries(CATEGORY_LABELS).map(([value, label]) => ({ value, label })),
+  ...Object.entries(CATEGORY_LABELS).map(([value, label]: [string, string]): SelectOption => ({
+    value,
+    label,
+  })),
   { value: UNCATEGORIZED_VALUE, label: 'Uncategorized' },
 ];
 
@@ -92,27 +78,10 @@ function categoryLabel(category: IncidentCategory | undefined): string {
   return category ? CATEGORY_LABELS[category] : 'Uncategorized';
 }
 
-/**
- * Debounces a fast-changing value (e.g. a search input) so downstream
- * filtering doesn't re-run on every keystroke. Mirrors the identical local
- * hook in `(admin)/users/page.tsx` — kept as a page-local copy rather than
- * a shared export so this change stays scoped to the Incidents page.
- */
-function useDebouncedValue(value: string, delayMs: number): string {
-  const [debounced, setDebounced] = useState(value);
-  useEffect((): (() => void) => {
-    const timer = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(timer);
-  }, [value, delayMs]);
-  return debounced;
-}
-
 export default function IncidentsPage(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<FilterValue>('all');
-  const [viewIncident, setViewIncident] = useState<ClientIncident | null>(null);
-  const [editIncident, setEditIncident] = useState<ClientIncident | null>(null);
+  const [viewIncident, setViewIncident] = useState<IncidentWithUser | null>(null);
+  const [editIncident, setEditIncident] = useState<IncidentWithUser | null>(null);
 
   // Search & advanced filters — applied client-side on top of the
   // status-tab-filtered result set already fetched below (the incidents
@@ -125,41 +94,13 @@ export default function IncidentsPage(): React.JSX.Element {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
-  const incidentsQuery = useQuery({
-    queryKey: ['incidents', filter],
-    queryFn: () =>
-      apiFetch<ClientIncident[]>(
-        filter === 'all' ? '/api/incidents' : `/api/incidents?status=${filter}`,
-        idToken ?? '',
-      ),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
+  const incidentsQuery = useIncidentsQuery(filter);
+  const updateMutation = useUpdateIncidentMutation();
 
-  const updateMutation = useMutation({
-    mutationFn: ({
-      id,
-      status,
-      adminNote,
-    }: {
-      id: string;
-      status: IncidentStatus;
-      adminNote: string;
-    }) =>
-      apiFetch(`/api/incidents/${id}`, idToken ?? '', {
-        method: 'PATCH',
-        body: JSON.stringify({ status, adminNote }),
-      }),
-    onSuccess: () => {
-      toast.success('Incident updated');
-      setEditIncident(null);
-      queryClient.invalidateQueries({ queryKey: ['incidents'] }).catch(() => undefined);
-    },
-    onError: () => toast.error('Failed to update incident'),
-  });
-
-  const incidents = useMemo(() => incidentsQuery.data ?? [], [incidentsQuery.data]);
+  const incidents = useMemo(
+    (): IncidentWithUser[] => incidentsQuery.data ?? [],
+    [incidentsQuery.data],
+  );
 
   // Cities are derived from the currently loaded incidents' reporters
   // rather than a separate lookup — there is no standalone "list of
@@ -167,38 +108,44 @@ export default function IncidentsPage(): React.JSX.Element {
   // actually have reports for the active status tab.
   const cityFilterOptions = useMemo((): SelectOption[] => {
     const cities = new Set<string>();
-    incidents.forEach((incident) => {
-      if (incident.user?.city) cities.add(incident.user.city);
+    incidents.forEach((incident: IncidentWithUser): void => {
+      if (incident.user?.city) {
+        cities.add(incident.user.city);
+      }
     });
     return [
       { value: ALL_CITIES_VALUE, label: 'All Cities' },
       ...Array.from(cities)
-        .sort((a, b) => a.localeCompare(b))
-        .map((city) => ({ value: city, label: city })),
+        .sort((a: string, b: string): number => a.localeCompare(b))
+        .map((city: string): SelectOption => ({ value: city, label: city })),
     ];
   }, [incidents]);
 
   // A selected city can drop out of the options when the loaded incidents
   // change (e.g. after a status update); fall back to "All Cities" rather
   // than silently filtering on a value the dropdown can no longer show.
-  const activeCityFilter = cityFilterOptions.some((option) => option.value === cityFilter)
+  const activeCityFilter = cityFilterOptions.some(
+    (option: SelectOption): boolean => option.value === cityFilter,
+  )
     ? cityFilter
     : ALL_CITIES_VALUE;
 
-  const filteredIncidents = useMemo((): ClientIncident[] => {
+  const filteredIncidents = useMemo((): IncidentWithUser[] => {
     const query = debouncedSearch.trim().toLowerCase();
     // Date-only strings ("2026-09-01") parse as UTC midnight; appending a
     // time makes them parse in the admin's local time zone instead.
     const fromDate = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
     const toDate = dateTo ? new Date(`${dateTo}T23:59:59.999`) : null;
 
-    return incidents.filter((incident) => {
+    return incidents.filter((incident: IncidentWithUser): boolean => {
       if (query) {
         const matchesSearch =
           incident.title.toLowerCase().includes(query) ||
           incident.description.toLowerCase().includes(query) ||
           (incident.user?.name.toLowerCase().includes(query) ?? false);
-        if (!matchesSearch) return false;
+        if (!matchesSearch) {
+          return false;
+        }
       }
 
       if (activeCityFilter !== ALL_CITIES_VALUE && incident.user?.city !== activeCityFilter) {
@@ -207,12 +154,18 @@ export default function IncidentsPage(): React.JSX.Element {
 
       if (categoryFilter !== 'all') {
         const category = incident.category ?? UNCATEGORIZED_VALUE;
-        if (category !== categoryFilter) return false;
+        if (category !== categoryFilter) {
+          return false;
+        }
       }
 
       const createdAt = new Date(incident.createdAt);
-      if (fromDate && createdAt < fromDate) return false;
-      if (toDate && createdAt > toDate) return false;
+      if (fromDate && createdAt < fromDate) {
+        return false;
+      }
+      if (toDate && createdAt > toDate) {
+        return false;
+      }
 
       return true;
     });
@@ -239,7 +192,7 @@ export default function IncidentsPage(): React.JSX.Element {
       <Tabs
         items={FILTER_ITEMS}
         value={filter}
-        onValueChange={(v) => {
+        onValueChange={(v: string): void => {
           setFilter(v as FilterValue);
           setCityFilter(ALL_CITIES_VALUE);
         }}
@@ -251,32 +204,38 @@ export default function IncidentsPage(): React.JSX.Element {
             label="Search"
             placeholder="Search by title, description, or reporter…"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>): void =>
+              setSearch(event.target.value)
+            }
             className="w-full sm:w-64"
           />
           <Select
             label="City"
             value={activeCityFilter}
-            onValueChange={setCityFilter}
+            onValueChange={(value: string): void => setCityFilter(value)}
             options={cityFilterOptions}
           />
           <Select
             label="Category"
             value={categoryFilter}
-            onValueChange={(value) => setCategoryFilter(value as CategoryFilterValue)}
+            onValueChange={(value: string): void => setCategoryFilter(value as CategoryFilterValue)}
             options={CATEGORY_FILTER_OPTIONS}
           />
           <Input
             label="From"
             type="date"
             value={dateFrom}
-            onChange={(event) => setDateFrom(event.target.value)}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>): void =>
+              setDateFrom(event.target.value)
+            }
           />
           <Input
             label="To"
             type="date"
             value={dateTo}
-            onChange={(event) => setDateTo(event.target.value)}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>): void =>
+              setDateTo(event.target.value)
+            }
           />
           {hasActiveFilters ? (
             <Button variant="outline" onClick={clearFilters}>
@@ -322,7 +281,7 @@ export default function IncidentsPage(): React.JSX.Element {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredIncidents.map((incident) => (
+            {filteredIncidents.map((incident): React.JSX.Element => (
               <TableRow key={incident.id}>
                 <TableCell>{truncate(incident.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
                 <TableCell>{incident.user?.name ?? '—'}</TableCell>
@@ -341,10 +300,14 @@ export default function IncidentsPage(): React.JSX.Element {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setViewIncident(incident)}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(): void => setViewIncident(incident)}
+                    >
                       View
                     </Button>
-                    <Button size="sm" onClick={() => setEditIncident(incident)}>
+                    <Button size="sm" onClick={(): void => setEditIncident(incident)}>
                       Update Status
                     </Button>
                   </div>
@@ -358,7 +321,11 @@ export default function IncidentsPage(): React.JSX.Element {
       {viewIncident ? (
         <Dialog
           open
-          onOpenChange={(open) => !open && setViewIncident(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setViewIncident(null);
+            }
+          }}
           title={viewIncident.title}
           description={formatDistanceToNow(new Date(viewIncident.createdAt), { addSuffix: true })}
         >
@@ -374,7 +341,7 @@ export default function IncidentsPage(): React.JSX.Element {
             </a>
             {viewIncident.photoUrls.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
-                {viewIncident.photoUrls.map((url) => (
+                {viewIncident.photoUrls.map((url): React.JSX.Element => (
                   <a
                     key={url}
                     href={url}
@@ -408,10 +375,17 @@ export default function IncidentsPage(): React.JSX.Element {
       {editIncident ? (
         <UpdateStatusDialog
           incident={editIncident}
-          onClose={() => setEditIncident(null)}
-          onSave={(status, adminNote) =>
-            updateMutation.mutate({ id: editIncident.id, status, adminNote })
-          }
+          onClose={(): void => setEditIncident(null)}
+          onSave={(status: IncidentStatus, adminNote: string): void => {
+            updateMutation.mutate(
+              { id: editIncident.id, status, adminNote },
+              {
+                onSuccess: (): void => {
+                  setEditIncident(null);
+                },
+              },
+            );
+          }}
           isSaving={updateMutation.isPending}
         />
       ) : null}
@@ -420,7 +394,7 @@ export default function IncidentsPage(): React.JSX.Element {
 }
 
 interface UpdateStatusDialogProps {
-  incident: ClientIncident;
+  incident: IncidentWithUser;
   onClose: () => void;
   onSave: (status: IncidentStatus, adminNote: string) => void;
   isSaving: boolean;
@@ -445,15 +419,25 @@ function UpdateStatusDialog({
     onSave(values.status, values.adminNote);
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()} title="Update Status">
+    <Dialog
+      open
+      onOpenChange={(open: boolean): void => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      title="Update Status"
+    >
       <form
-        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>
+          void handleSubmit(onSubmit)(event)
+        }
         className="flex flex-col gap-4"
       >
         <Controller
           control={control}
           name="status"
-          render={({ field }) => (
+          render={({ field }): React.JSX.Element => (
             <Select
               label="Status"
               value={field.value}

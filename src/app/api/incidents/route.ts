@@ -17,6 +17,7 @@ const INCIDENT_LIST_FIELDS = [
   'photoUrls',
   'createdAt',
   'status',
+  'category',
   'adminNote',
 ] as const;
 

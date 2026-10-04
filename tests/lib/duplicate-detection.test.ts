@@ -47,6 +47,10 @@ describe('haversineDistanceMeters', () => {
     const backward = haversineDistanceMeters(12.9763, 77.5929, 12.9716, 77.5946);
     expect(forward).toBeCloseTo(backward, 6);
   });
+
+  it('returns NaN (never a false-positive 0) when an input is not finite', () => {
+    expect(haversineDistanceMeters(NaN, BASE_LON, BASE_LAT, BASE_LON)).toBeNaN();
+  });
 });
 
 describe('detectDuplicateClusters', () => {
@@ -98,17 +102,51 @@ describe('detectDuplicateClusters', () => {
     expect(clusters[0]?.reportIds).toEqual(['victim', 'witness-2', 'witness-1']);
   });
 
-  it('transitively links a chain even when its two ends are outside the threshold alone', () => {
-    // a <-> b <-> c, each pair ~0 distance apart in time, but a and c are
-    // 90 hours apart (outside the 48h window) if compared directly.
+  it('links a report directly within range of the master even if it arrives later', () => {
+    // a (master) <-> b both within 45h/500m of a. b is added after a.
+    const reports = [
+      report('a', { createdAt: BASE_TIME }),
+      report('b', { createdAt: hoursAfter(BASE_TIME, 45) }),
+    ];
+    const clusters = detectDuplicateClusters(reports);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.reportIds).toEqual(['a', 'b']);
+  });
+
+  it('does NOT let a cluster drift beyond its master via a chain of close neighbors', () => {
+    // a (master) -> b is 45h after a (within 48h of a, joins).
+    // c is 90h after a (OUTSIDE 48h of master a) but only 45h after b.
+    // A naive "link to nearest neighbor" algorithm would transitively
+    // chain a-b-c together; anchoring to the master must not.
     const reports = [
       report('a', { createdAt: BASE_TIME }),
       report('b', { createdAt: hoursAfter(BASE_TIME, 45) }),
       report('c', { createdAt: hoursAfter(BASE_TIME, 90) }),
     ];
     const clusters = detectDuplicateClusters(reports);
+    // Only {a, b} clusters. c has nothing else to join and forms its own
+    // singleton, which is dropped (clusters need 2+ members).
     expect(clusters).toHaveLength(1);
-    expect(clusters[0]?.reportIds).toEqual(['a', 'b', 'c']);
+    expect(clusters[0]?.masterId).toBe('a');
+    expect(clusters[0]?.reportIds).toEqual(['a', 'b']);
+  });
+
+  it('starts a fresh cluster once reports drift past the master, instead of growing on', () => {
+    // a (master) <-> b within range of a. c and d are each ~45h after the
+    // previous report, walking the cluster far past a's own 48h window —
+    // but c is within range of... nothing yet (a rejects it), so c
+    // becomes its own new master, and d joins c's cluster instead.
+    const reports = [
+      report('a', { createdAt: BASE_TIME }),
+      report('b', { createdAt: hoursAfter(BASE_TIME, 45) }),
+      report('c', { createdAt: hoursAfter(BASE_TIME, 90) }),
+      report('d', { createdAt: hoursAfter(BASE_TIME, 135) }),
+    ];
+    const clusters = detectDuplicateClusters(reports);
+    expect(clusters).toHaveLength(2);
+    const clustersByMaster = new Map(clusters.map((cluster) => [cluster.masterId, cluster]));
+    expect(clustersByMaster.get('a')?.reportIds).toEqual(['a', 'b']);
+    expect(clustersByMaster.get('c')?.reportIds).toEqual(['c', 'd']);
   });
 
   it('does not link reports with conflicting categories even if close in space and time', () => {
@@ -192,5 +230,34 @@ describe('detectDuplicateClusters', () => {
   it('exposes the documented default thresholds', () => {
     expect(DUPLICATE_DISTANCE_METERS).toBe(500);
     expect(DUPLICATE_TIME_WINDOW_MS).toBe(48 * 60 * 60 * 1000);
+  });
+
+  it('never links a report with an unparseable createdAt (fails closed, not open)', () => {
+    const reports = [
+      report('a', { createdAt: BASE_TIME }),
+      report('bad-date', { createdAt: 'not-a-real-date' }),
+    ];
+    expect(detectDuplicateClusters(reports)).toEqual([]);
+  });
+
+  it('never links a report with non-finite coordinates (fails closed, not open)', () => {
+    const reports = [
+      report('a', { createdAt: BASE_TIME }),
+      report('bad-coords', { latitude: NaN, longitude: NaN, createdAt: BASE_TIME }),
+      report('c', { createdAt: hoursAfter(BASE_TIME, 1) }),
+    ];
+    const clusters = detectDuplicateClusters(reports);
+    // a and c still cluster together; bad-coords joins neither.
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.reportIds).toEqual(['a', 'c']);
+  });
+
+  it('does not throw when every report in the input has a bad timestamp', () => {
+    const reports = [
+      report('a', { createdAt: 'garbage' }),
+      report('b', { createdAt: 'also-garbage' }),
+    ];
+    expect(() => detectDuplicateClusters(reports)).not.toThrow();
+    expect(detectDuplicateClusters(reports)).toEqual([]);
   });
 });

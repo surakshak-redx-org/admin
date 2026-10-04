@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/content', label: 'Content', icon: FileText },
   { href: '/unsafe-areas', label: 'Unsafe Areas', icon: MapPin },
-  { href: '/moderation', label: 'Moderation', icon: Shield },
+  { href: '/moderation', label: 'Reported Posts', icon: Shield },
   { href: '/community-posts', label: 'Community Posts', icon: MessageSquare },
   { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
   { href: '/users', label: 'Users', icon: Users },

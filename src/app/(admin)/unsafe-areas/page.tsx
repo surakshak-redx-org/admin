@@ -28,7 +28,11 @@ import { useAuth } from '@/lib/auth/session';
 import type { Serialized } from '@/types/api.types';
 import type { UnsafeArea, UnsafeAreaStatus } from '@/types/firestore.types';
 
-type ClientUnsafeArea = Serialized<UnsafeArea> & { id: string };
+type ClientUnsafeArea = Serialized<UnsafeArea> & {
+  id: string;
+  /** Resolved by the list API; `null` when the reporter has no profile name. */
+  reporterName?: string | null;
+};
 type FilterValue = UnsafeAreaStatus | 'all';
 
 const FILTER_ITEMS = [
@@ -139,7 +143,9 @@ function UnsafeAreasPageInner(): React.JSX.Element {
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </TableCell>
-                <TableCell className="font-mono text-xs">{area.reportedBy.slice(0, 8)}…</TableCell>
+                <TableCell title={area.reportedBy}>
+                  {area.reporterName ?? <span className="text-stone">Unknown user</span>}
+                </TableCell>
                 <TableCell>
                   {formatDistanceToNow(new Date(area.createdAt), { addSuffix: true })}
                 </TableCell>

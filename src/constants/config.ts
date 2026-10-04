@@ -17,6 +17,8 @@ export const SEARCH_DEBOUNCE_MS = 300;
  * row in the moderation queue is already at or past this number.
  */
 export const REPORT_COUNT_DANGER_THRESHOLD = 3;
+/** Reports after which the app auto-hides a community post (mirrors the app/functions value). */
+export const COMMUNITY_REPORT_HIDE_THRESHOLD = 3;
 
 /** Max characters shown before truncating a title in table rows. */
 export const TITLE_TRUNCATE_LENGTH = 60;

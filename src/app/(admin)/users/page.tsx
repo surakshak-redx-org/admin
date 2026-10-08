@@ -55,6 +55,7 @@ export default function UsersPage(): React.JSX.Element {
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [suspendUser, setSuspendUser] = useState<ClientUser | null>(null);
+  const [suspensionAction, setSuspensionAction] = useState<'suspend' | 'unsuspend'>('suspend');
 
   // One query per page of results. `pageCursors` grows via "Load more";
   // it resets to a single first page whenever the (debounced) search term
@@ -96,19 +97,24 @@ export default function UsersPage(): React.JSX.Element {
     enabled: idToken !== null && viewUserId !== null,
   });
 
-  const suspendMutation = useMutation({
-    mutationFn: (uid: string) =>
-      apiFetch(`/api/users/${uid}`, idToken ?? '', {
-        method: 'PATCH',
-        body: JSON.stringify({ action: 'suspend' }),
-      }),
-    onSuccess: () => {
-      toast.success('User suspended');
-      setSuspendUser(null);
-      queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined);
-    },
-    onError: () => toast.error('Failed to suspend user'),
-  });
+ const suspendMutation = useMutation({
+  mutationFn: ({ uid, action }: { uid: string; action: 'suspend' | 'unsuspend' }) =>
+    apiFetch(`/api/users/${uid}`, idToken ?? '', {
+      method: 'PATCH',
+      body: JSON.stringify({ action }),
+    }),
+  onSuccess: (_data, variables) => {
+    toast.success(variables.action === 'suspend' ? 'User suspended' : 'User unsuspended');
+    setSuspendUser(null);
+    queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined);
+  },
+  onError: (_error, variables) =>
+    toast.error(
+      variables.action === 'suspend'
+        ? 'Failed to suspend user'
+        : 'Failed to unsuspend user',
+    ),
+});
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
@@ -159,13 +165,15 @@ export default function UsersPage(): React.JSX.Element {
                         View
                       </Button>
                       <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={user.isSuspended}
-                        onClick={() => setSuspendUser(user)}
-                      >
-                        Suspend
-                      </Button>
+  size="sm"
+  variant={user.isSuspended ? 'outline' : 'destructive'}
+  onClick={() => {
+    setSuspendUser(user);
+    setSuspensionAction(user.isSuspended ? 'unsuspend' : 'suspend');
+  }}
+>
+  {user.isSuspended ? 'Unsuspend' : 'Suspend'}
+</Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -219,16 +227,29 @@ export default function UsersPage(): React.JSX.Element {
       ) : null}
 
       {suspendUser ? (
-        <AlertDialog
-          open
-          onOpenChange={(open) => !open && setSuspendUser(null)}
-          title={`Suspend ${suspendUser.name}?`}
-          description="They will no longer be able to sign in to the app."
-          confirmLabel="Suspend"
-          isLoading={suspendMutation.isPending}
-          onConfirm={() => suspendMutation.mutate(suspendUser.id)}
-        />
-      ) : null}
+  <AlertDialog
+    open
+    onOpenChange={(open) => !open && setSuspendUser(null)}
+    title={
+      suspensionAction === 'suspend'
+        ? `Suspend ${suspendUser.name}?`
+        : `Unsuspend ${suspendUser.name}?`
+    }
+    description={
+      suspensionAction === 'suspend'
+        ? 'They will no longer be able to sign in to the app.'
+        : 'They will be able to access their account again.'
+    }
+    confirmLabel={suspensionAction === 'suspend' ? 'Suspend' : 'Unsuspend'}
+    isLoading={suspendMutation.isPending}
+    onConfirm={() =>
+      suspendMutation.mutate({
+        uid: suspendUser.id,
+        action: suspensionAction,
+      })
+    }
+  />
+) : null}
     </div>
   );
 }

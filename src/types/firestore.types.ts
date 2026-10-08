@@ -65,7 +65,14 @@ export interface UnsafeArea {
 }
 
 // ─── Incidents ──────────────────────────────────────────────────────
-export type IncidentStatus = 'submitted' | 'under_review' | 'resolved';
+export type IncidentStatus = 'submitted' | 'under_review' | 'resolved' | 'rejected';
+
+/**
+ * Incident category, used by the admin dashboard's Incidents search &
+ * filter UI. Optional on `IncidentReport` — see the note on that field
+ * below before assuming every document has one.
+ */
+export type IncidentCategory = 'harassment' | 'theft' | 'physical_abuse' | 'stalking' | 'other';
 
 /**
  * Incident category, used by the admin dashboard's Incidents search &

@@ -55,7 +55,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 }
 
 interface UserActionBody {
-  action: 'suspend';
+  action: 'suspend' | 'unsuspend';
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
@@ -66,12 +66,25 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     const { uid } = await context.params;
     const { action } = (await request.json()) as UserActionBody;
 
-    if (action !== 'suspend') return apiError('Invalid action', 400);
+    if (action !== 'suspend' && action !== 'unsuspend') {
+      return apiError('Invalid action', 400);
+    }
 
-    await adminDb.collection(COLLECTIONS.USERS).doc(uid).update({ isSuspended: true });
-    return apiOk({ id: uid, isSuspended: true });
+    const isSuspended = action === 'suspend';
+
+    await adminDb.collection(COLLECTIONS.USERS).doc(uid).update({
+      isSuspended,
+    });
+
+    return apiOk({
+      id: uid,
+      isSuspended,
+    });
   } catch (error) {
     console.error('PATCH /api/users/[uid] failed:', error);
-    return apiError('Failed to suspend user', 500);
+    return apiError(
+      'Failed to update user suspension status',
+      500,
+    );
   }
 }

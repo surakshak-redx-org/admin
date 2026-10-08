@@ -29,7 +29,12 @@ export async function GET(request: NextRequest): Promise<Response> {
 
     let query = adminDb.collection(COLLECTIONS.INCIDENT_REPORTS).orderBy('createdAt', 'desc');
 
-    if (status === 'submitted' || status === 'under_review' || status === 'resolved') {
+    if (
+      status === 'submitted' ||
+      status === 'under_review' ||
+      status === 'resolved' ||
+      status === 'rejected'
+    ) {
       query = adminDb
         .collection(COLLECTIONS.INCIDENT_REPORTS)
         .where('status', '==', status)

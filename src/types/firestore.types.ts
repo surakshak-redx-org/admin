@@ -74,13 +74,6 @@ export type IncidentStatus = 'submitted' | 'under_review' | 'resolved' | 'reject
  */
 export type IncidentCategory = 'harassment' | 'theft' | 'physical_abuse' | 'stalking' | 'other';
 
-/**
- * Incident category, used by the admin dashboard's Incidents search &
- * filter UI. Optional on `IncidentReport` — see the note on that field
- * below before assuming every document has one.
- */
-export type IncidentCategory = 'harassment' | 'theft' | 'physical_abuse' | 'stalking' | 'other';
-
 /** Mirrors Firestore `incidentReports/{reportId}`. `adminNote` is admin-only. */
 export interface IncidentReport {
   id: string;

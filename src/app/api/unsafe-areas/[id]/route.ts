@@ -56,7 +56,7 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     }
 
     if (action === 'reject') {
-      await ref.update({ status: 'rejected' });
+      await ref.update({ status: 'rejected', pinColor: 'orange' });
       return apiOk({ id, status: 'rejected' });
     }
 

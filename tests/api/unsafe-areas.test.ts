@@ -2,6 +2,7 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { PATCH } from '@/app/api/unsafe-areas/[id]/route';
 import { GET } from '@/app/api/unsafe-areas/route';
 import { COLLECTIONS } from '@/constants/firestore';
 
@@ -53,5 +54,54 @@ describe('GET /api/unsafe-areas', () => {
     expect(response.status).toBe(200);
     expect(json.data?.find((area) => area.id === 'a1')?.reporterName).toBe('Asha Patil');
     expect(json.data?.find((area) => area.id === 'a2')?.reporterName).toBeNull();
+  });
+});
+
+describe('PATCH /api/unsafe-areas/[id]', () => {
+  const adminUid = 'admin-uid';
+
+  beforeEach((): void => {
+    resetFirestoreMocks();
+    mockAdminAuth.verifyIdToken.mockResolvedValue({
+      uid: adminUid,
+      email: 'admin@surakshak.in',
+    } as unknown as DecodedIdToken);
+    setCollectionDocs('admins', [{ id: adminUid, data: { uid: adminUid, role: 'admin' } }]);
+  });
+
+  function patchRequest(id: string, action: string): NextRequest {
+    return new NextRequest(`http://localhost:3000/api/unsafe-areas/${id}`, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+  }
+
+  it('fails if already rejected', async (): Promise<void> => {
+    setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
+      { id: 'a1', data: { status: 'rejected', pinColor: 'orange' } },
+    ]);
+
+    const response = await PATCH(patchRequest('a1', 'reject'), {
+      params: Promise.resolve({ id: 'a1' }),
+    });
+
+    expect(response.status).toBe(400);
+    const json = (await response.json()) as ApiResponse<unknown>;
+    expect(json.error).toBe('Unsafe area is already rejected');
+  });
+
+  it('rejects a pending area and sets pinColor to orange', async (): Promise<void> => {
+    setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
+      { id: 'a1', data: { status: 'pending', pinColor: 'orange' } },
+    ]);
+
+    const response = await PATCH(patchRequest('a1', 'reject'), {
+      params: Promise.resolve({ id: 'a1' }),
+    });
+
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as ApiResponse<{ status: string }>;
+    expect(json.data?.status).toBe('rejected');
   });
 });

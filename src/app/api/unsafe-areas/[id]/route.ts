@@ -50,13 +50,21 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     const { action } = (await request.json()) as UnsafeAreaActionBody;
     const ref = adminDb.collection(COLLECTIONS.UNSAFE_AREAS).doc(id);
 
+    const doc = await ref.get();
+    if (!doc.exists) return apiError('Unsafe area not found', 404);
+
+    const data = doc.data() as UnsafeArea;
+
     if (action === 'approve') {
       await ref.update({ status: 'approved', pinColor: 'red' });
       return apiOk({ id, status: 'approved' });
     }
 
     if (action === 'reject') {
-      await ref.update({ status: 'rejected' });
+      if (data.status === 'rejected') {
+        return apiError('Unsafe area is already rejected', 400);
+      }
+      await ref.update({ status: 'rejected', pinColor: 'orange' });
       return apiOk({ id, status: 'rejected' });
     }
 

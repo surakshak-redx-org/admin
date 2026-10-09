@@ -54,12 +54,14 @@ const FILTER_ITEMS = [
   { value: 'submitted', label: 'Submitted' },
   { value: 'under_review', label: 'Under Review' },
   { value: 'resolved', label: 'Resolved' },
+  { value: 'rejected', label: 'Rejected' },
 ];
 
 const STATUS_OPTIONS: SelectOption[] = [
   { value: 'submitted', label: 'Submitted' },
   { value: 'under_review', label: 'Under Review' },
   { value: 'resolved', label: 'Resolved' },
+  { value: 'rejected', label: 'Rejected' },
 ];
 
 /** Sentinel filter value matching reports with no `category` set. */

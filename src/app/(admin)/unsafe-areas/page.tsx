@@ -133,7 +133,7 @@ function UnsafeAreasPageInner(): React.JSX.Element {
                           Reject
                         </Button>
                       </>
-                    ) : (
+                    ) : area.status !== 'rejected' ? (
                       <Button
                         size="sm"
                         variant="destructive"
@@ -141,7 +141,7 @@ function UnsafeAreasPageInner(): React.JSX.Element {
                       >
                         Reject
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </TableCell>
               </TableRow>

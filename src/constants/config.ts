@@ -17,6 +17,8 @@ export const SEARCH_DEBOUNCE_MS = 300;
  * row in the moderation queue is already at or past this number.
  */
 export const REPORT_COUNT_DANGER_THRESHOLD = 3;
+/** Reports after which the app auto-hides a community post (mirrors the app/functions value). */
+export const COMMUNITY_REPORT_HIDE_THRESHOLD = 3;
 
 /** Max characters shown before truncating a title in table rows. */
 export const TITLE_TRUNCATE_LENGTH = 60;
@@ -50,3 +52,6 @@ export const COMMUNITY_POST_STATUSES = ['all', 'visible', 'hidden'] as const;
  * in the app repo) are rendered as clickable links in the admin UI.
  */
 export const LOCATION_URL_PREFIX = 'https://www.google.com/maps/place/';
+
+/** Maximum execution duration allowed for the health check Firestore probe in milliseconds. */
+export const FIRESTORE_PROBE_TIMEOUT_MS = 3000;

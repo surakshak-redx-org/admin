@@ -1,13 +1,12 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import toast from 'react-hot-toast';
 import { z } from 'zod';
 
+import { useTogglePublished } from '@/components/features/content/useTogglePublished';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -25,8 +24,7 @@ import {
 } from '@/components/ui/Table';
 import { Textarea } from '@/components/ui/Textarea';
 import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
+import { useDeleteTipMutation, useSaveTipMutation, useTipsQuery } from '@/hooks';
 import type { SafetyTip } from '@/types/firestore.types';
 
 const tipSchema = z.object({
@@ -43,54 +41,12 @@ function truncate(text: string, length: number): string {
 }
 
 export function TipsTab(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const [dialogTip, setDialogTip] = useState<SafetyTip | 'new' | null>(null);
   const [deleteTip, setDeleteTip] = useState<SafetyTip | null>(null);
-
-  const tipsQuery = useQuery({
-    queryKey: ['content', 'tips'],
-    queryFn: () => apiFetch<SafetyTip[]>('/api/content/tips', idToken ?? ''),
-    enabled: idToken !== null,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['content', 'tips'] }).catch(() => undefined);
-  };
-
-  const saveMutation = useMutation({
-    mutationFn: async (values: TipFormValues & { id?: string }) => {
-      const body = JSON.stringify(values);
-      if (values.id) {
-        return apiFetch(`/api/content/tips/${values.id}`, idToken ?? '', { method: 'PUT', body });
-      }
-      return apiFetch('/api/content/tips', idToken ?? '', { method: 'POST', body });
-    },
-    onSuccess: () => {
-      toast.success('Safety tip saved');
-      setDialogTip(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to save safety tip'),
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/content/tips/${id}`, idToken ?? '', { method: 'PATCH' }),
-    onSuccess: invalidate,
-    onError: () => toast.error('Failed to update safety tip'),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/content/tips/${id}`, idToken ?? '', { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('Safety tip deleted');
-      setDeleteTip(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to delete safety tip'),
-  });
+  const tipsQuery = useTipsQuery();
+  const saveMutation = useSaveTipMutation();
+  const deleteMutation = useDeleteTipMutation();
+  const publish = useTogglePublished<SafetyTip>('tips', 'Tip');
 
   if (tipsQuery.isLoading) {
     return (
@@ -104,7 +60,7 @@ export function TipsTab(): React.JSX.Element {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-deep-ink">Safety Tips</h2>
-        <Button size="sm" onClick={() => setDialogTip('new')}>
+        <Button size="sm" onClick={(): void => setDialogTip('new')}>
           <Plus className="h-4 w-4" />
           Add Tip
         </Button>
@@ -121,7 +77,7 @@ export function TipsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(tipsQuery.data ?? []).map((tip) => (
+          {(tipsQuery.data ?? []).map((tip: SafetyTip): React.JSX.Element => (
             <TableRow key={tip.id}>
               <TableCell>{truncate(tip.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -130,16 +86,17 @@ export function TipsTab(): React.JSX.Element {
               <TableCell>
                 <Switch
                   checked={tip.isPublished}
-                  onCheckedChange={() => toggleMutation.mutate(tip.id)}
+                  onCheckedChange={(checked: boolean): void => publish.toggle(tip.id, checked)}
+                  disabled={publish.pendingId === tip.id}
                 />
               </TableCell>
               <TableCell>{tip.order}</TableCell>
               <TableCell>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setDialogTip(tip)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDialogTip(tip)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setDeleteTip(tip)}>
+                  <Button variant="ghost" size="sm" onClick={(): void => setDeleteTip(tip)}>
                     <Trash2 className="h-4 w-4 text-error-red" />
                   </Button>
                 </div>
@@ -152,10 +109,14 @@ export function TipsTab(): React.JSX.Element {
       {dialogTip ? (
         <TipFormDialog
           tip={dialogTip === 'new' ? null : dialogTip}
-          onClose={() => setDialogTip(null)}
-          onSubmit={(values) =>
-            saveMutation.mutate({ ...values, id: dialogTip === 'new' ? undefined : dialogTip.id })
-          }
+          onClose={(): void => setDialogTip(null)}
+          onSubmit={(values: TipFormValues): void => {
+            saveMutation.mutate(dialogTip === 'new' ? values : { ...values, id: dialogTip.id }, {
+              onSuccess: (): void => {
+                setDialogTip(null);
+              },
+            });
+          }}
           isSaving={saveMutation.isPending}
         />
       ) : null}
@@ -163,12 +124,22 @@ export function TipsTab(): React.JSX.Element {
       {deleteTip ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeleteTip(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeleteTip(null);
+            }
+          }}
           title="Delete this safety tip?"
           description="This permanently removes the tip from the app. This cannot be undone."
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
-          onConfirm={() => deleteMutation.mutate(deleteTip.id)}
+          onConfirm={(): void => {
+            deleteMutation.mutate(deleteTip.id, {
+              onSuccess: (): void => {
+                setDeleteTip(null);
+              },
+            });
+          }}
         />
       ) : null}
     </div>
@@ -206,11 +177,17 @@ function TipFormDialog({
   return (
     <Dialog
       open
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open: boolean): void => {
+        if (!open) {
+          onClose();
+        }
+      }}
       title={tip ? 'Edit Safety Tip' : 'Add Safety Tip'}
     >
       <form
-        onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+        onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>
+          void handleSubmit(onSubmit)(event)
+        }
         className="flex flex-col gap-4"
       >
         <Input label="Title" {...register('title')} error={errors.title?.message} />
@@ -219,7 +196,7 @@ function TipFormDialog({
         <Controller
           control={control}
           name="isPublished"
-          render={({ field }) => (
+          render={({ field }): React.JSX.Element => (
             <Switch label="Published" checked={field.value} onCheckedChange={field.onChange} />
           )}
         />

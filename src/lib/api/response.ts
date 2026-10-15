@@ -14,11 +14,11 @@ export function apiOk<T>(
   return NextResponse.json({ data, error: null }, init);
 }
 
-export function apiError(
+export function apiError<T = null>(
   message: string,
   initOrStatus: number | ResponseInit = 400,
   headers?: HeadersInit,
-): NextResponse<ApiResult<null>> {
+): NextResponse<ApiResult<T>> {
   const init: ResponseInit =
     typeof initOrStatus === 'number'
       ? { status: initOrStatus, headers }

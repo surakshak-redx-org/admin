@@ -1,8 +1,11 @@
+import { ArrowUpRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { Card, CardContent } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
+
+const NUMBER_LOCALE = 'en-IN';
 
 export type StatCardColor = 'blue' | 'purple' | 'red' | 'amber';
 
@@ -29,6 +32,9 @@ const BADGE_CLASSES: Record<StatCardColor, string> = {
   amber: 'bg-amber-100 text-amber-800',
 };
 
+const LINK_CLASSES =
+  'group block rounded-xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transition-none motion-reduce:hover:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-shakti-purple focus-visible:ring-offset-2';
+
 export function StatCard({
   icon: Icon,
   color,
@@ -39,21 +45,36 @@ export function StatCard({
 }: StatCardProps): React.JSX.Element {
   const card = (
     <Card>
-      <CardContent className="flex items-start justify-between">
-        <div>
+      <CardContent className="space-y-3">
+        <div className="flex items-start justify-between gap-2">
           <span className={cn('inline-flex rounded-md p-2', COLOR_CLASSES[color])}>
-            <Icon className="h-5 w-5" />
+            <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
-          <p className="mt-3 text-sm text-stone">{label}</p>
-          <p className="text-2xl font-semibold text-deep-ink">{value}</p>
+          {badgeLabel ? (
+            <span
+              className={cn(
+                'whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium',
+                BADGE_CLASSES[color],
+              )}
+            >
+              {badgeLabel}
+            </span>
+          ) : null}
         </div>
-        {badgeLabel ? (
-          <span
-            className={cn('rounded-full px-2.5 py-0.5 text-xs font-medium', BADGE_CLASSES[color])}
-          >
-            {badgeLabel}
-          </span>
-        ) : null}
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm text-stone">{label}</p>
+            {href ? (
+              <ArrowUpRight
+                className="h-4 w-4 text-stone transition-colors group-hover:text-deep-ink"
+                aria-hidden="true"
+              />
+            ) : null}
+          </div>
+          <p className="mt-1 text-3xl font-semibold tabular-nums text-deep-ink">
+            {value.toLocaleString(NUMBER_LOCALE)}
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
@@ -63,10 +84,7 @@ export function StatCard({
   }
 
   return (
-    <Link
-      href={href}
-      className="block rounded-xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-shakti-purple focus-visible:ring-offset-2"
-    >
+    <Link href={href} className={LINK_CLASSES}>
       {card}
     </Link>
   );

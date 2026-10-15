@@ -53,5 +53,14 @@ export const COMMUNITY_POST_STATUSES = ['all', 'visible', 'hidden'] as const;
  */
 export const LOCATION_URL_PREFIX = 'https://www.google.com/maps/place/';
 
+/**
+ * Hosts community post images may be loaded from. Must stay in sync with
+ * `images.remotePatterns` in next.config.ts, otherwise next/image throws.
+ */
+export const COMMUNITY_IMAGE_HOSTS: readonly string[] = [
+  'firebasestorage.googleapis.com',
+  'lh3.googleusercontent.com',
+];
+
 /** Maximum execution duration allowed for the health check Firestore probe in milliseconds. */
 export const FIRESTORE_PROBE_TIMEOUT_MS = 3000;

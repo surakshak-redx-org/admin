@@ -3,11 +3,7 @@ import type { NextRequest } from 'next/server';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
-import {
-  deleteContent,
-  toggleContentPublished,
-  updateContent,
-} from '@/lib/content/content.service';
+import { deleteContent, applyPublishPatch, updateContent } from '@/lib/content/content.service';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -48,7 +44,7 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
 
   try {
     const { id } = await context.params;
-    const isPublished = await toggleContentPublished(COLLECTIONS.FAQS, id);
+    const isPublished = await applyPublishPatch(request, COLLECTIONS.FAQS, id);
     return apiOk({ id, isPublished });
   } catch (error) {
     console.error('PATCH /api/content/faqs/[id] failed:', error);

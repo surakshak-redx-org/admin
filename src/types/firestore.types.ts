@@ -65,7 +65,7 @@ export interface UnsafeArea {
 }
 
 // ─── Incidents ──────────────────────────────────────────────────────
-export type IncidentStatus = 'submitted' | 'under_review' | 'resolved';
+export type IncidentStatus = 'submitted' | 'under_review' | 'resolved' | 'rejected';
 
 /**
  * Incident category, used by the admin dashboard's Incidents search &

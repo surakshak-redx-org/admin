@@ -19,6 +19,20 @@ export interface IncidentDetailResponse {
   mapUrl: string;
 }
 
+/** Minimal incident data shown in a "new incident" notification. */
+export interface NewIncidentSummary {
+  id: string;
+  title: string;
+  reporterName: string | null;
+  createdAt: string;
+}
+
+export interface LatestIncidentsResponse {
+  incidents: NewIncidentSummary[];
+  /** Pass back as `since` on the next call. */
+  cursor: string;
+}
+
 export interface UpdateIncidentPayload {
   status: IncidentStatus;
   adminNote?: string;
@@ -87,4 +101,23 @@ export async function updateIncident(
       body: JSON.stringify(payload),
     },
   );
+}
+
+/**
+ * Polls for incident reports created after `since`. Without `since` the server
+ * only returns a starting cursor (no incidents), so reports that already exist
+ * are never announced as new.
+ *
+ * @param idToken Firebase ID token for authentication
+ * @param since Cursor returned by the previous call, or null for the first call
+ * @returns New incident summaries (newest first) and the cursor for the next call
+ */
+export async function getLatestIncidents(
+  idToken: string,
+  since: string | null,
+): Promise<LatestIncidentsResponse> {
+  const path = since
+    ? `/api/incidents/latest?since=${encodeURIComponent(since)}`
+    : '/api/incidents/latest';
+  return apiFetch<LatestIncidentsResponse>(path, idToken);
 }

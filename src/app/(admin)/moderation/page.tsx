@@ -1,10 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
-import toast from 'react-hot-toast';
 
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
@@ -21,16 +19,13 @@ import {
   TableRow,
 } from '@/components/ui/Table';
 import {
+  COMMUNITY_REPORT_HIDE_THRESHOLD,
   CONTENT_PREVIEW_LENGTH,
-  QUERY_ALWAYS_STALE_TIME_MS,
   REPORT_COUNT_DANGER_THRESHOLD,
 } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { CommunityPost, PostType } from '@/types/firestore.types';
-
-type ClientPost = Serialized<CommunityPost> & { id: string };
+import { useModerationActionMutation, useModerationPostsQuery } from '@/hooks';
+import type { ModerationPost } from '@/services/moderation.service';
+import type { PostType } from '@/types/firestore.types';
 
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
@@ -44,59 +39,44 @@ function truncate(text: string, length: number): string {
 }
 
 export default function ModerationPage(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
-  const [restorePost, setRestorePost] = useState<ClientPost | null>(null);
-  const [deletePost, setDeletePost] = useState<ClientPost | null>(null);
+  const [restorePost, setRestorePost] = useState<ModerationPost | null>(null);
+  const [deletePost, setDeletePost] = useState<ModerationPost | null>(null);
 
-  const postsQuery = useQuery({
-    queryKey: ['moderation'],
-    queryFn: () => apiFetch<ClientPost[]>('/api/moderation', idToken ?? ''),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['moderation'] }).catch(() => undefined);
-
-    queryClient.invalidateQueries({ queryKey: ['community-posts'] }).catch(() => undefined);
-  };
-
-  const actionMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'restore' | 'delete' }) =>
-      apiFetch(`/api/moderation/${id}`, idToken ?? '', {
-        method: 'PATCH',
-        body: JSON.stringify({ action }),
-      }),
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.action === 'restore'
-          ? 'Post restored and visible again'
-          : 'Post permanently deleted',
-      );
-      setRestorePost(null);
-      setDeletePost(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to update post'),
-  });
+  const postsQuery = useModerationPostsQuery();
+  const actionMutation = useModerationActionMutation();
 
   const posts = postsQuery.data ?? [];
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold text-deep-ink">Moderation</h1>
+      {/* What this queue is was never stated anywhere on the page (BUG-009). */}
+      <div>
+        <h1 className="text-2xl font-semibold text-deep-ink">Reported Posts</h1>
+        <p className="mt-1 max-w-3xl text-sm text-stone">
+          Community posts are hidden from the app automatically once{' '}
+          {COMMUNITY_REPORT_HIDE_THRESHOLD} users report them. Review each one:{' '}
+          <span className="font-medium">Restore</span> makes it visible again and clears its
+          reports; <span className="font-medium">Delete</span> removes it permanently.
+        </p>
+      </div>
 
       {postsQuery.isLoading ? (
         <div className="flex justify-center py-16">
           <Spinner size="lg" />
         </div>
+      ) : postsQuery.isError ? (
+        <EmptyState
+          icon={AlertCircle}
+          iconClassName="h-10 w-10 text-error-red"
+          title="Couldn't load reported posts"
+          subtitle="Refresh the page to try again."
+        />
       ) : posts.length === 0 ? (
         <EmptyState
           icon={CheckCircle2}
           iconClassName="h-10 w-10 text-forest-green"
           title="All clear — no posts need review"
+          subtitle="Posts appear here once they are hidden by user reports."
         />
       ) : (
         <Table>
@@ -112,7 +92,7 @@ export default function ModerationPage(): React.JSX.Element {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {posts.map((post) => (
+            {posts.map((post): React.JSX.Element => (
               <TableRow key={post.id}>
                 <TableCell className="max-w-xs">
                   {truncate(post.content, CONTENT_PREVIEW_LENGTH)}
@@ -136,10 +116,14 @@ export default function ModerationPage(): React.JSX.Element {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setRestorePost(post)}>
+                    <Button size="sm" onClick={(): void => setRestorePost(post)}>
                       Restore
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => setDeletePost(post)}>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={(): void => setDeletePost(post)}
+                    >
                       Delete
                     </Button>
                   </div>
@@ -153,25 +137,51 @@ export default function ModerationPage(): React.JSX.Element {
       {restorePost ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setRestorePost(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setRestorePost(null);
+            }
+          }}
           title="Restore this post?"
           description="This will make the post visible again and reset report count."
           confirmLabel="Restore"
           confirmVariant="default"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: restorePost.id, action: 'restore' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: restorePost.id, action: 'restore' },
+              {
+                onSuccess: (): void => {
+                  setRestorePost(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
 
       {deletePost ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeletePost(null)}
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeletePost(null);
+            }
+          }}
           title="Permanently delete this post?"
-          description="Cannot be undone."
+          description="The post and its report history are removed for everyone. This cannot be undone."
           confirmLabel="Delete"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: deletePost.id, action: 'delete' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: deletePost.id, action: 'delete' },
+              {
+                onSuccess: (): void => {
+                  setDeletePost(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
     </div>

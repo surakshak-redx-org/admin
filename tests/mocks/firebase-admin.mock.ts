@@ -35,6 +35,7 @@ export interface MockQuery {
   where: (field: string, opStr: string, value: unknown) => MockQuery;
   orderBy: (field: string, directionStr?: 'asc' | 'desc') => MockQuery;
   limit: (limitNum: number) => MockQuery;
+  select: (...fields: string[]) => MockQuery;
   get: () => Promise<MockQuerySnapshot>;
   count: () => { get: () => Promise<MockAggregateQuerySnapshot> };
 }
@@ -150,6 +151,7 @@ function createMockQuery(collectionName: string): MockQuery {
     where: (): MockQuery => query,
     orderBy: (): MockQuery => query,
     limit: (): MockQuery => query,
+    select: (): MockQuery => query,
     get: (): Promise<MockQuerySnapshot> => {
       const err = firestoreQueryErrorToThrow ?? firestoreErrorToThrow;
       if (err) {
@@ -218,6 +220,19 @@ export function createMockCollection(collectionName: string): MockCollectionRefe
 
 export const mockAdminDb = {
   collection: vi.fn((name: string): MockCollectionReference => createMockCollection(name)),
+  /** Batched read; a trailing read-options object (e.g. `fieldMask`) is ignored. */
+  getAll: vi.fn(
+    (
+      ...args: (MockDocumentReference | Record<string, unknown>)[]
+    ): Promise<MockDocumentSnapshot[]> =>
+      Promise.all(
+        args
+          .filter(
+            (arg): arg is MockDocumentReference => 'get' in arg && typeof arg.get === 'function',
+          )
+          .map((ref) => ref.get()),
+      ),
+  ),
 };
 
 export const mockAdminAuth = {

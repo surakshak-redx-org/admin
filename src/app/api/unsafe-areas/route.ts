@@ -20,18 +20,6 @@ const UNSAFE_AREA_LIST_FIELDS = [
   'downvotes',
 ] as const;
 
-const UNSAFE_AREA_LIST_FIELDS = [
-  'title',
-  'category',
-  'latitude',
-  'longitude',
-  'reportedBy',
-  'createdAt',
-  'status',
-  'upvotes',
-  'downvotes',
-] as const;
-
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);

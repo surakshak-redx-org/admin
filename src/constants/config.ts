@@ -10,6 +10,10 @@ export const MAX_PAGE_SIZE = 100;
 /** Search input debounce on the Users page, in milliseconds. */
 export const SEARCH_DEBOUNCE_MS = 300;
 
+/** Actions the PATCH /api/users/[uid] route accepts. */
+export const USER_ACTIONS = ['suspend', 'unsuspend'] as const;
+export type UserAction = (typeof USER_ACTIONS)[number];
+
 /**
  * Report count at which a moderation row's badge turns red. Mirrors
  * `REPORT_THRESHOLD` in functions/src/moderation/onPostReported.ts — that is

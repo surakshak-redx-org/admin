@@ -17,6 +17,7 @@ import {
   getUserDetail,
   getUsers,
   suspendUser,
+  unsuspendUser,
   type UserDetailResponse,
   type UsersListResponse,
 } from '@/services/users.service';
@@ -152,6 +153,33 @@ export function useSuspendUserMutation(): UseMutationResult<SuspendUserResult, E
     },
     onError: (error: Error): void => {
       toast.error(error.message || 'Failed to suspend user');
+    },
+  });
+}
+
+/**
+ * Custom mutation hook to restore (unsuspend) a suspended user account.
+ * Automatically invalidates users queries and displays notification toasts.
+ *
+ * @returns React Query mutation result
+ */
+export function useUnsuspendUserMutation(): UseMutationResult<SuspendUserResult, Error, string> {
+  const { idToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<SuspendUserResult, Error, string>({
+    mutationFn: (uid: string): Promise<SuspendUserResult> => {
+      if (!idToken) {
+        throw new Error('Authentication required');
+      }
+      return unsuspendUser(idToken, uid);
+    },
+    onSuccess: (): void => {
+      toast.success('User unsuspended');
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.users.all });
+    },
+    onError: (error: Error): void => {
+      toast.error(error.message || 'Failed to unsuspend user');
     },
   });
 }

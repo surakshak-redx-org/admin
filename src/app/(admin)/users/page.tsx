@@ -22,6 +22,7 @@ import { SEARCH_DEBOUNCE_MS } from '@/constants/config';
 import {
   useDebouncedValue,
   useSuspendUserMutation,
+  useUnsuspendUserMutation,
   useUserDetailQuery,
   useUsersListQuery,
 } from '@/hooks';
@@ -34,6 +35,7 @@ export default function UsersPage(): React.JSX.Element {
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [suspendUser, setSuspendUser] = useState<ClientUser | null>(null);
+  const [unsuspendUser, setUnsuspendUser] = useState<ClientUser | null>(null);
 
   const [cursor, setCursor] = useState<string | null>(null);
   const [prevSearch, setPrevSearch] = useState(debouncedSearch);
@@ -48,6 +50,7 @@ export default function UsersPage(): React.JSX.Element {
   const usersQuery = useUsersListQuery(debouncedSearch, cursor, undefined, 0);
   const detailQuery = useUserDetailQuery(viewUserId);
   const suspendMutation = useSuspendUserMutation();
+  const unsuspendMutation = useUnsuspendUserMutation();
 
   if (usersQuery.data && usersQuery.data !== prevData) {
     setPrevData(usersQuery.data);
@@ -126,14 +129,23 @@ export default function UsersPage(): React.JSX.Element {
                       >
                         View
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={user.isSuspended}
-                        onClick={(): void => setSuspendUser(user)}
-                      >
-                        Suspend
-                      </Button>
+                      {user.isSuspended ? (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          onClick={(): void => setUnsuspendUser(user)}
+                        >
+                          Unsuspend
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={(): void => setSuspendUser(user)}
+                        >
+                          Suspend
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -215,6 +227,34 @@ export default function UsersPage(): React.JSX.Element {
                   ),
                 );
                 setSuspendUser(null);
+              },
+            });
+          }}
+        />
+      ) : null}
+
+      {unsuspendUser ? (
+        <AlertDialog
+          open
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setUnsuspendUser(null);
+            }
+          }}
+          title={`Unsuspend ${unsuspendUser.name}?`}
+          description="They will be able to sign in to the app again."
+          confirmLabel="Unsuspend"
+          confirmVariant="default"
+          isLoading={unsuspendMutation.isPending}
+          onConfirm={(): void => {
+            unsuspendMutation.mutate(unsuspendUser.id, {
+              onSuccess: (): void => {
+                setAccumulatedUsers((prev: ClientUser[]): ClientUser[] =>
+                  prev.map((u: ClientUser): ClientUser =>
+                    u.id === unsuspendUser.id ? { ...u, isSuspended: false } : u,
+                  ),
+                );
+                setUnsuspendUser(null);
               },
             });
           }}

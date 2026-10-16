@@ -97,6 +97,29 @@ export interface IncidentReport {
   adminNote?: string;
 }
 
+export type BugReportCategory = 'crash' | 'ui' | 'login' | 'performance' | 'other';
+export type BugReportSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type BugReportStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+/** Mirrors bugReports/{reportId}; user identity comes only from Firebase Auth. */
+export interface BugReport {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  category: BugReportCategory;
+  severity: BugReportSeverity;
+  status: BugReportStatus;
+  platform: string;
+  appVersion: string;
+  stepsToReproduce: string;
+  expectedBehavior: string;
+  actualBehavior: string;
+  adminNotes: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
 // ─── Content ────────────────────────────────────────────────────────
 export interface Law {
   id: string;

@@ -3,6 +3,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertTriangle,
+  Bug,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/moderation', label: 'Reported Posts', icon: Shield },
   { href: '/community-posts', label: 'Community Posts', icon: MessageSquare },
   { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
+  { href: '/bug-reports', label: 'Bug Reports', icon: Bug },
   { href: '/users', label: 'Users', icon: Users },
   { href: '/admins', label: 'Admins', icon: UserCheck, superAdminOnly: true },
 ];

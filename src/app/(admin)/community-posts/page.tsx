@@ -2,13 +2,13 @@
 
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
-import Image from 'next/image';
 import { useMemo, useState } from 'react';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
+import { ImageUnavailable, ImageWithFallback } from '@/components/ui/ImageWithFallback';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Spinner } from '@/components/ui/Spinner';
@@ -26,6 +26,7 @@ import {
   LOCATION_URL_PREFIX,
 } from '@/constants/config';
 import { useCommunityPostsInfiniteQuery, useDeleteCommunityPostMutation } from '@/hooks';
+import { isSupportedImageUrl } from '@/lib/image-url';
 import type { Serialized } from '@/types/api.types';
 import type { CommunityPost, PostType } from '@/types/firestore.types';
 
@@ -56,23 +57,25 @@ function truncate(text: string, length: number): string {
   return text.length > length ? `${text.slice(0, length)}…` : text;
 }
 
-function isSupportedImageUrl(url: string): boolean {
-  try {
-    const parsedUrl = new URL(url);
-
-    return (
-      parsedUrl.protocol === 'https:' &&
-      (parsedUrl.hostname === 'firebasestorage.googleapis.com' ||
-        parsedUrl.hostname === 'lh3.googleusercontent.com')
-    );
-  } catch {
-    return false;
-  }
-}
-
 /** Post data is user-written — only link out to the documented Maps URL format. */
 function isSupportedLocationUrl(url: string): boolean {
   return url.startsWith(LOCATION_URL_PREFIX);
+}
+
+interface PostImageProps {
+  url: string;
+}
+
+function PostImage({ url }: PostImageProps): React.JSX.Element {
+  if (!isSupportedImageUrl(url)) return <ImageUnavailable />;
+
+  return (
+    <ImageWithFallback
+      src={url}
+      alt="Community post"
+      className="max-h-80 w-full rounded-lg object-contain"
+    />
+  );
 }
 
 export default function CommunityPostsPage(): React.JSX.Element {
@@ -326,15 +329,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
               })}
             </p>
 
-            {selectedPost.imageUrl && isSupportedImageUrl(selectedPost.imageUrl) ? (
-              <Image
-                src={selectedPost.imageUrl}
-                alt="Community post"
-                width={800}
-                height={600}
-                className="max-h-80 w-full rounded-lg object-contain"
-              />
-            ) : null}
+            {selectedPost.imageUrl ? <PostImage url={selectedPost.imageUrl} /> : null}
 
             {selectedPost.locationUrl && isSupportedLocationUrl(selectedPost.locationUrl) ? (
               <a

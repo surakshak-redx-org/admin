@@ -53,5 +53,14 @@ export const COMMUNITY_POST_STATUSES = ['all', 'visible', 'hidden'] as const;
  */
 export const LOCATION_URL_PREFIX = 'https://www.google.com/maps/place/';
 
+/**
+ * Hosts user-uploaded images may be loaded from in the admin UI. Keep in sync
+ * with `images.remotePatterns` in next.config.ts.
+ */
+export const SUPPORTED_IMAGE_HOSTS = [
+  'firebasestorage.googleapis.com',
+  'lh3.googleusercontent.com',
+] as const;
+
 /** Maximum execution duration allowed for the health check Firestore probe in milliseconds. */
 export const FIRESTORE_PROBE_TIMEOUT_MS = 3000;

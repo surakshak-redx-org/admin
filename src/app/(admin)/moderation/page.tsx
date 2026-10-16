@@ -2,8 +2,13 @@
 
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import Image from 'next/image';
 import { useState } from 'react';
 
+import {
+  isSupportedImageUrl,
+  PostPreviewDialog,
+} from '@/components/features/moderation/PostPreviewDialog';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeVariant } from '@/components/ui/Badge';
@@ -39,6 +44,7 @@ function truncate(text: string, length: number): string {
 }
 
 export default function ModerationPage(): React.JSX.Element {
+  const [previewPost, setPreviewPost] = useState<ModerationPost | null>(null);
   const [restorePost, setRestorePost] = useState<ModerationPost | null>(null);
   const [deletePost, setDeletePost] = useState<ModerationPost | null>(null);
 
@@ -95,7 +101,25 @@ export default function ModerationPage(): React.JSX.Element {
             {posts.map((post): React.JSX.Element => (
               <TableRow key={post.id}>
                 <TableCell className="max-w-xs">
-                  {truncate(post.content, CONTENT_PREVIEW_LENGTH)}
+                  <div className="flex items-center gap-3">
+                    {isSupportedImageUrl(post.imageUrl) ? (
+                      <button
+                        type="button"
+                        aria-label="View post details"
+                        onClick={(): void => setPreviewPost(post)}
+                        className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-gray-100"
+                      >
+                        <Image
+                          src={post.imageUrl}
+                          alt="Post thumbnail"
+                          fill
+                          sizes="48px"
+                          className="object-cover"
+                        />
+                      </button>
+                    ) : null}
+                    <span>{truncate(post.content, CONTENT_PREVIEW_LENGTH)}</span>
+                  </div>
                 </TableCell>
                 <TableCell>{post.isAnonymous ? 'Anonymous' : post.authorName}</TableCell>
                 <TableCell>{post.city}</TableCell>
@@ -116,6 +140,9 @@ export default function ModerationPage(): React.JSX.Element {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={(): void => setPreviewPost(post)}>
+                      View Details
+                    </Button>
                     <Button size="sm" onClick={(): void => setRestorePost(post)}>
                       Restore
                     </Button>
@@ -133,6 +160,22 @@ export default function ModerationPage(): React.JSX.Element {
           </TableBody>
         </Table>
       )}
+
+      {previewPost ? (
+        <PostPreviewDialog
+          post={previewPost}
+          isBusy={actionMutation.isPending}
+          onClose={(): void => setPreviewPost(null)}
+          onRestore={(post: ModerationPost): void => {
+            setPreviewPost(null);
+            setRestorePost(post);
+          }}
+          onDelete={(post: ModerationPost): void => {
+            setPreviewPost(null);
+            setDeletePost(post);
+          }}
+        />
+      ) : null}
 
       {restorePost ? (
         <AlertDialog

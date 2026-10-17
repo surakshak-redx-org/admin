@@ -129,23 +129,15 @@ export default function UsersPage(): React.JSX.Element {
                       >
                         View
                       </Button>
-                      {user.isSuspended ? (
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={(): void => setUnsuspendUser(user)}
-                        >
-                          Unsuspend
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={(): void => setSuspendUser(user)}
-                        >
-                          Suspend
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant={user.isSuspended ? 'default' : 'destructive'}
+                        onClick={(): void =>
+                          user.isSuspended ? setUnsuspendUser(user) : setSuspendUser(user)
+                        }
+                      >
+                        {user.isSuspended ? 'Revoke Suspension' : 'Suspend'}
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>

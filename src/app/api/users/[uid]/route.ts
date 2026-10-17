@@ -55,23 +55,37 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 }
 
 interface UserActionBody {
-  action: 'suspend';
+  action: 'suspend' | 'unsuspend';
 }
 
-export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
+export async function PATCH(
+  request: NextRequest,
+  context: RouteContext,
+): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
 
   try {
     const { uid } = await context.params;
-    const { action } = (await request.json()) as UserActionBody;
+    const body = (await request.json()) as UserActionBody;
 
-    if (action !== 'suspend') return apiError('Invalid action', 400);
+    if (body.action !== 'suspend' && body.action !== 'unsuspend') {
+      return apiError('Invalid action', 400);
+    }
 
-    await adminDb.collection(COLLECTIONS.USERS).doc(uid).update({ isSuspended: true });
-    return apiOk({ id: uid, isSuspended: true });
+    const isSuspended = body.action === 'suspend';
+    const userRef = adminDb.collection(COLLECTIONS.USERS).doc(uid);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return apiError('User not found', 404);
+    }
+
+    await userRef.update({ isSuspended });
+
+    return apiOk({ id: uid, isSuspended });
   } catch (error) {
     console.error('PATCH /api/users/[uid] failed:', error);
-    return apiError('Failed to suspend user', 500);
+    return apiError('Failed to update user suspension', 500);
   }
 }

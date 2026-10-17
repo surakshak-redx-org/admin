@@ -3,7 +3,6 @@
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
 
-import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -21,7 +20,7 @@ import {
 import { SEARCH_DEBOUNCE_MS } from '@/constants/config';
 import {
   useDebouncedValue,
-  useSuspendUserMutation,
+  useSetUserSuspensionMutation,
   useUserDetailQuery,
   useUsersListQuery,
 } from '@/hooks';
@@ -33,7 +32,6 @@ export default function UsersPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
-  const [suspendUser, setSuspendUser] = useState<ClientUser | null>(null);
 
   const [cursor, setCursor] = useState<string | null>(null);
   const [prevSearch, setPrevSearch] = useState(debouncedSearch);
@@ -47,7 +45,7 @@ export default function UsersPage(): React.JSX.Element {
 
   const usersQuery = useUsersListQuery(debouncedSearch, cursor, undefined, 0);
   const detailQuery = useUserDetailQuery(viewUserId);
-  const suspendMutation = useSuspendUserMutation();
+  const suspensionMutation = useSetUserSuspensionMutation();
 
   if (usersQuery.data && usersQuery.data !== prevData) {
     setPrevData(usersQuery.data);
@@ -128,11 +126,29 @@ export default function UsersPage(): React.JSX.Element {
                       </Button>
                       <Button
                         size="sm"
-                        variant="destructive"
-                        disabled={user.isSuspended}
-                        onClick={(): void => setSuspendUser(user)}
+                        variant={user.isSuspended ? 'outline' : 'destructive'}
+                        disabled={suspensionMutation.isPending}
+                        onClick={(): void => {
+                          suspensionMutation.mutate(
+                            {
+                              uid: user.id,
+                              isSuspended: !user.isSuspended,
+                            },
+                            {
+                              onSuccess: (): void => {
+                                setAccumulatedUsers((prev: ClientUser[]): ClientUser[] =>
+                                  prev.map((u: ClientUser): ClientUser =>
+                                    u.id === user.id
+                                      ? { ...u, isSuspended: !user.isSuspended }
+                                      : u,
+                                  ),
+                                );
+                              },
+                            },
+                          );
+                        }}
                       >
-                        Suspend
+                        {user.isSuspended ? 'Revoke Suspension' : 'Suspend'}
                       </Button>
                     </div>
                   </TableCell>
@@ -189,36 +205,39 @@ export default function UsersPage(): React.JSX.Element {
                 <span>{detailQuery.data.postCount} posts</span>
                 <span>{detailQuery.data.incidentCount} incident reports</span>
               </div>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant={detailQuery.data.user.isSuspended ? 'outline' : 'destructive'}
+                  disabled={suspensionMutation.isPending}
+                  onClick={(): void => {
+                    if (!detailQuery.data) return;
+                    const targetUser = detailQuery.data.user;
+                    suspensionMutation.mutate(
+                      {
+                        uid: targetUser.id,
+                        isSuspended: !targetUser.isSuspended,
+                      },
+                      {
+                        onSuccess: (): void => {
+                          setAccumulatedUsers((prev: ClientUser[]): ClientUser[] =>
+                            prev.map((u: ClientUser): ClientUser =>
+                              u.id === targetUser.id
+                                ? { ...u, isSuspended: !targetUser.isSuspended }
+                                : u,
+                            ),
+                          );
+                        },
+                      },
+                    );
+                  }}
+                >
+                  {detailQuery.data.user.isSuspended ? 'Revoke Suspension' : 'Suspend'}
+                </Button>
+              </div>
             </div>
           )}
         </Dialog>
-      ) : null}
-
-      {suspendUser ? (
-        <AlertDialog
-          open
-          onOpenChange={(open: boolean): void => {
-            if (!open) {
-              setSuspendUser(null);
-            }
-          }}
-          title={`Suspend ${suspendUser.name}?`}
-          description="They will no longer be able to sign in to the app."
-          confirmLabel="Suspend"
-          isLoading={suspendMutation.isPending}
-          onConfirm={(): void => {
-            suspendMutation.mutate(suspendUser.id, {
-              onSuccess: (): void => {
-                setAccumulatedUsers((prev: ClientUser[]): ClientUser[] =>
-                  prev.map((u: ClientUser): ClientUser =>
-                    u.id === suspendUser.id ? { ...u, isSuspended: true } : u,
-                  ),
-                );
-                setSuspendUser(null);
-              },
-            });
-          }}
-        />
       ) : null}
     </div>
   );

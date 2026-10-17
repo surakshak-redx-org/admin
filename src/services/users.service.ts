@@ -57,22 +57,26 @@ export async function getUserDetail(idToken: string, uid: string): Promise<UserD
 }
 
 /**
- * Suspends a user account.
+ * Sets suspension status for a user account.
  *
  * @param idToken Firebase ID token for authentication
  * @param uid Target user unique identifier
+ * @param isSuspended Whether the user should be suspended
  * @returns Updated user id and suspension status
  */
-export async function suspendUser(
+export async function setUserSuspension(
   idToken: string,
   uid: string,
+  isSuspended: boolean,
 ): Promise<{ id: string; isSuspended: boolean }> {
   return apiFetch<{ id: string; isSuspended: boolean }>(
     `/api/users/${encodeURIComponent(uid)}`,
     idToken,
     {
       method: 'PATCH',
-      body: JSON.stringify({ action: 'suspend' }),
+      body: JSON.stringify({
+        action: isSuspended ? 'suspend' : 'unsuspend',
+      }),
     },
   );
 }

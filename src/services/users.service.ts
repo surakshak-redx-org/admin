@@ -1,3 +1,4 @@
+import type { UserAction } from '@/constants/config';
 import { apiFetch } from '@/lib/api/client';
 import type { Serialized } from '@/types/api.types';
 import type { SurakshakUser } from '@/types/firestore.types';
@@ -56,27 +57,40 @@ export async function getUserDetail(idToken: string, uid: string): Promise<UserD
   return apiFetch<UserDetailResponse>(`/api/users/${encodeURIComponent(uid)}`, idToken);
 }
 
+export interface UserSuspensionResponse {
+  id: string;
+  isSuspended: boolean;
+}
+
+async function patchUserAction(
+  idToken: string,
+  uid: string,
+  action: UserAction,
+): Promise<UserSuspensionResponse> {
+  return apiFetch<UserSuspensionResponse>(`/api/users/${encodeURIComponent(uid)}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ action }),
+  });
+}
+
 /**
- * Sets suspension status for a user account.
+ * Suspends a user account.
  *
  * @param idToken Firebase ID token for authentication
  * @param uid Target user unique identifier
- * @param isSuspended Whether the user should be suspended
  * @returns Updated user id and suspension status
  */
-export async function setUserSuspension(
-  idToken: string,
-  uid: string,
-  isSuspended: boolean,
-): Promise<{ id: string; isSuspended: boolean }> {
-  return apiFetch<{ id: string; isSuspended: boolean }>(
-    `/api/users/${encodeURIComponent(uid)}`,
-    idToken,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({
-        action: isSuspended ? 'suspend' : 'unsuspend',
-      }),
-    },
-  );
+export async function suspendUser(idToken: string, uid: string): Promise<UserSuspensionResponse> {
+  return patchUserAction(idToken, uid, 'suspend');
+}
+
+/**
+ * Restores a suspended user account so they can sign in again.
+ *
+ * @param idToken Firebase ID token for authentication
+ * @param uid Target user unique identifier
+ * @returns Updated user id and suspension status
+ */
+export async function unsuspendUser(idToken: string, uid: string): Promise<UserSuspensionResponse> {
+  return patchUserAction(idToken, uid, 'unsuspend');
 }

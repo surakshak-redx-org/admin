@@ -23,94 +23,128 @@ import { useAuth } from '@/lib/auth/session';
 import type { IncidentWithUser } from '@/services/incidents.service';
 import type { UsersListResponse } from '@/services/users.service';
 
+const DATE_LOCALE = 'en-IN';
+const RECENT_USERS_LIMIT = 5;
+const RECENT_INCIDENTS_LIMIT = 5;
+const INCIDENTS_FETCH_LIMIT = 10;
+const RESOLVED_STATUS = 'resolved';
+
+const VIEW_ALL_LINK_CLASSES =
+  'inline-block rounded text-sm font-medium text-shakti-purple hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-shakti-purple focus-visible:ring-offset-2';
+
 export default function DashboardPage(): React.JSX.Element {
   const { user } = useAuth();
 
   const statsQuery = useStatsQuery();
-  const usersQuery = useRecentUsersQuery(5);
-  const incidentsQuery = useRecentIncidentsQuery(10);
+  const usersQuery = useRecentUsersQuery(RECENT_USERS_LIMIT);
+  const incidentsQuery = useRecentIncidentsQuery(INCIDENTS_FETCH_LIMIT);
 
   const stats = statsQuery.data;
-  const recentUsers: UsersListResponse['users'] = usersQuery.data?.users.slice(0, 5) ?? [];
+  const recentUsers: UsersListResponse['users'] =
+    usersQuery.data?.users.slice(0, RECENT_USERS_LIMIT) ?? [];
   const recentIncidents: IncidentWithUser[] = (incidentsQuery.data ?? [])
-    .filter((incident: IncidentWithUser): boolean => incident.status !== 'resolved')
-    .slice(0, 5);
+    .filter((incident: IncidentWithUser): boolean => incident.status !== RESOLVED_STATUS)
+    .slice(0, RECENT_INCIDENTS_LIMIT);
+
+  const today = new Date().toLocaleDateString(DATE_LOCALE, { dateStyle: 'full' });
+
+  let statsSection: React.JSX.Element;
+
+  if (statsQuery.isError) {
+    statsSection = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-error-red">Could not load dashboard stats.</p>
+          <Button
+            variant="outline"
+            onClick={(): void => {
+              void statsQuery.refetch();
+            }}
+          >
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (statsQuery.isLoading || !stats) {
+    statsSection = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else {
+    statsSection = (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <StatCard
+          icon={Users}
+          color="blue"
+          label="Total Users"
+          value={stats.totalUsers}
+          href="/users"
+        />
+        <StatCard
+          icon={MessageSquare}
+          color="purple"
+          label="Community Posts"
+          value={stats.totalPosts}
+          href="/community-posts"
+        />
+        <StatCard
+          icon={EyeOff}
+          color="red"
+          label="Hidden Posts"
+          value={stats.hiddenPosts}
+          badgeLabel={
+            stats.hiddenPosts > 0
+              ? `${stats.hiddenPosts} ${stats.hiddenPosts === 1 ? 'needs' : 'need'} review`
+              : undefined
+          }
+          href="/moderation"
+        />
+        <StatCard
+          icon={MapPin}
+          color="amber"
+          label="Pending Unsafe Areas"
+          value={stats.pendingUnsafeAreas}
+          badgeLabel={
+            stats.pendingUnsafeAreas > 0 ? `${stats.pendingUnsafeAreas} pending` : undefined
+          }
+          href="/unsafe-areas?filter=pending"
+        />
+        <StatCard
+          icon={AlertTriangle}
+          color="red"
+          label="Open Incidents"
+          value={stats.openIncidents}
+          href="/incidents"
+        />
+        <StatCard
+          icon={Scale}
+          color="blue"
+          label="Published Laws"
+          value={stats.publishedLaws}
+          href="/content?tab=laws"
+        />
+        <StatCard
+          icon={Newspaper}
+          color="purple"
+          label="Published News"
+          value={stats.publishedNews}
+          href="/content?tab=news"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-semibold text-deep-ink">Dashboard</h1>
-        <p className="text-sm text-stone">
-          Welcome back, {user?.displayName} —{' '}
-          {new Date().toLocaleDateString('en-IN', { dateStyle: 'full' })}
-        </p>
+        <p className="text-sm text-stone">Welcome back, {user?.displayName}</p>
+        <p className="text-xs text-stone">{today}</p>
       </div>
 
-      {statsQuery.isLoading || !stats ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard
-            icon={Users}
-            color="blue"
-            label="Total Users"
-            value={stats.totalUsers}
-            href="/users"
-          />
-          <StatCard
-            icon={MessageSquare}
-            color="purple"
-            label="Community Posts"
-            value={stats.totalPosts}
-            href="/community-posts"
-          />
-          <StatCard
-            icon={EyeOff}
-            color="red"
-            label="Hidden Posts (needs review)"
-            value={stats.hiddenPosts}
-            badgeLabel={
-              stats.hiddenPosts > 0
-                ? `${stats.hiddenPosts} ${stats.hiddenPosts === 1 ? 'needs' : 'need'} review`
-                : undefined
-            }
-            href="/moderation"
-          />
-          <StatCard
-            icon={MapPin}
-            color="amber"
-            label="Pending Unsafe Areas"
-            value={stats.pendingUnsafeAreas}
-            badgeLabel={
-              stats.pendingUnsafeAreas > 0 ? `${stats.pendingUnsafeAreas} pending` : undefined
-            }
-            href="/unsafe-areas?filter=pending"
-          />
-          <StatCard
-            icon={AlertTriangle}
-            color="red"
-            label="Open Incidents"
-            value={stats.openIncidents}
-            href="/incidents"
-          />
-          <StatCard
-            icon={Scale}
-            color="blue"
-            label="Published Laws"
-            value={stats.publishedLaws}
-            href="/content?tab=laws"
-          />
-          <StatCard
-            icon={Newspaper}
-            color="purple"
-            label="Published News"
-            value={stats.publishedNews}
-            href="/content?tab=news"
-          />
-        </div>
-      )}
+      {statsSection}
 
       <Card>
         <CardHeader>
@@ -154,6 +188,9 @@ export default function DashboardPage(): React.JSX.Element {
                 </div>
               ))
             )}
+            <Link href="/users" className={VIEW_ALL_LINK_CLASSES}>
+              View all users
+            </Link>
           </CardContent>
         </Card>
 
@@ -177,6 +214,9 @@ export default function DashboardPage(): React.JSX.Element {
                 </div>
               ))
             )}
+            <Link href="/incidents" className={VIEW_ALL_LINK_CLASSES}>
+              View all incidents
+            </Link>
           </CardContent>
         </Card>
       </div>

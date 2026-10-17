@@ -1,7 +1,7 @@
 'use client';
 
 import { formatDistanceToNow } from 'date-fns';
-import { Search } from 'lucide-react';
+import { Copy, Search } from 'lucide-react';
 import Image from 'next/image';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -27,6 +27,8 @@ import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/Textarea';
 import { SEARCH_DEBOUNCE_MS, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { useDebouncedValue, useIncidentsQuery, useUpdateIncidentMutation } from '@/hooks';
+import type { DuplicateCluster } from '@/lib/incidents/duplicate-detection';
+import { detectDuplicateClusters } from '@/lib/incidents/duplicate-detection';
 import type { IncidentWithUser } from '@/services/incidents.service';
 import type { IncidentCategory, IncidentStatus } from '@/types/firestore.types';
 
@@ -97,12 +99,42 @@ export default function IncidentsPage(): React.JSX.Element {
   const [dateTo, setDateTo] = useState('');
 
   const incidentsQuery = useIncidentsQuery(filter);
+  // Duplicate clusters must include reports from every status, not only the
+  // status currently selected in the tabs. The 'all' query shares its cache
+  // entry with incidentsQuery whenever filter is 'all'.
+  const allIncidentsForDuplicatesQuery = useIncidentsQuery('all');
   const updateMutation = useUpdateIncidentMutation();
 
   const incidents = useMemo(
     (): IncidentWithUser[] => incidentsQuery.data ?? [],
     [incidentsQuery.data],
   );
+
+  const [showDuplicates, setShowDuplicates] = useState(false);
+
+  const allIncidentsForDuplicates = useMemo(
+    () => allIncidentsForDuplicatesQuery.data ?? [],
+    [allIncidentsForDuplicatesQuery.data],
+  );
+
+  // Looked up against the full cross-status dataset, not the tab-scoped
+  // `incidents` above — a cluster can contain a report that isn't in the
+  // currently selected status Tab (see `allIncidentsForDuplicatesQuery`),
+  // and the duplicates dialog's "View" action needs to resolve every
+  // member of a cluster regardless of which tab is active.
+  const incidentById = useMemo((): Map<string, IncidentWithUser> => {
+    return new Map(allIncidentsForDuplicates.map((incident) => [incident.id, incident]));
+  }, [allIncidentsForDuplicates]);
+
+  // Computed from `allIncidentsForDuplicates` (every report, every
+  // status) rather than the tab-scoped `incidents` or the further-filtered
+  // `filteredIncidents` below — two reports about the same event are not
+  // guaranteed to share a status, so clustering has to see the whole
+  // dataset regardless of which status Tab or search/filter the admin
+  // currently has selected.
+  const duplicateClusters = useMemo((): DuplicateCluster[] => {
+    return detectDuplicateClusters(allIncidentsForDuplicates);
+  }, [allIncidentsForDuplicates]);
 
   // Cities are derived from the currently loaded incidents' reporters
   // rather than a separate lookup — there is no standalone "list of
@@ -242,6 +274,15 @@ export default function IncidentsPage(): React.JSX.Element {
           {hasActiveFilters ? (
             <Button variant="outline" onClick={clearFilters}>
               Clear Filters
+            </Button>
+          ) : null}
+          {duplicateClusters.length > 0 ? (
+            <Button variant="outline" onClick={() => setShowDuplicates(true)}>
+              <Copy className="mr-1.5 h-4 w-4" />
+              Possible Duplicates
+              <Badge variant="warning" className="ml-1.5">
+                {duplicateClusters.length}
+              </Badge>
             </Button>
           ) : null}
         </div>
@@ -391,6 +432,18 @@ export default function IncidentsPage(): React.JSX.Element {
           isSaving={updateMutation.isPending}
         />
       ) : null}
+
+      {showDuplicates ? (
+        <DuplicateClustersDialog
+          clusters={duplicateClusters}
+          incidentById={incidentById}
+          onClose={() => setShowDuplicates(false)}
+          onViewIncident={(incident) => {
+            setShowDuplicates(false);
+            setViewIncident(incident);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -459,5 +512,120 @@ function UpdateStatusDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+interface DuplicateClustersDialogProps {
+  clusters: DuplicateCluster[];
+  incidentById: Map<string, IncidentWithUser>;
+  onClose: () => void;
+  onViewIncident: (incident: IncidentWithUser) => void;
+}
+
+/**
+ * Lists every detected duplicate cluster as a "master incident thread":
+ * the earliest report in bold, followed by the other reports judged to be
+ * about the same event. Purely a read-only summary — clicking "View" opens
+ * the existing single-incident detail dialog (closing this one first,
+ * rather than stacking dialogs); there is no merge/delete action here,
+ * since collapsing reports together is an irreversible data change this
+ * page does not perform on its own.
+ */
+function DuplicateClustersDialog({
+  clusters,
+  incidentById,
+  onClose,
+  onViewIncident,
+}: DuplicateClustersDialogProps): React.JSX.Element {
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title="Possible Duplicate Incident Threads"
+      description="Reports filed close together in time and location — likely the same event."
+      className="max-w-2xl"
+    >
+      <div className="flex flex-col gap-4">
+        {clusters.map((cluster) => {
+          const members = cluster.reportIds
+            .map((id) => incidentById.get(id))
+            .filter((incident): incident is IncidentWithUser => incident !== undefined);
+          const master = members.find((incident) => incident.id === cluster.masterId);
+          const linkedReports = members.filter((incident) => incident.id !== cluster.masterId);
+          if (!master) return null;
+
+          return (
+            <div
+              key={cluster.masterId}
+              className="flex flex-col gap-3 rounded-md border border-gray-200 p-4"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <p className="text-sm font-medium text-deep-ink">
+                    {members.length} reports in this cluster
+                  </p>
+                  {/* Links to the master report's own coordinates — not the
+                      reporter's home city, which may be a different place
+                      entirely from where the incident actually happened. */}
+                  <a
+                    href={`https://www.google.com/maps/place/${master.latitude},${master.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-shakti-purple hover:underline"
+                  >
+                    View location on Google Maps
+                  </a>
+                </div>
+                <Badge variant="warning">Possible duplicate</Badge>
+              </div>
+
+              <DuplicateClusterMemberRow
+                incident={master}
+                roleLabel="Master report"
+                onView={() => onViewIncident(master)}
+              />
+              {linkedReports.map((incident) => (
+                <DuplicateClusterMemberRow
+                  key={incident.id}
+                  incident={incident}
+                  roleLabel="Linked report"
+                  onView={() => onViewIncident(incident)}
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </Dialog>
+  );
+}
+
+interface DuplicateClusterMemberRowProps {
+  incident: IncidentWithUser;
+  roleLabel: 'Master report' | 'Linked report';
+  onView: () => void;
+}
+
+function DuplicateClusterMemberRow({
+  incident,
+  roleLabel,
+  onView,
+}: DuplicateClusterMemberRowProps): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded border border-gray-100 bg-gray-50 p-3">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs font-medium uppercase tracking-wide text-stone">{roleLabel}</span>
+        <span className="text-sm font-medium text-deep-ink">
+          {truncate(incident.title, TITLE_TRUNCATE_LENGTH)}
+        </span>
+        <span className="text-xs text-stone">
+          {incident.user?.name ?? 'Unknown reporter'} ·{' '}
+          {formatDistanceToNow(new Date(incident.createdAt), { addSuffix: true })}
+        </span>
+      </div>
+      <Button size="sm" variant="outline" onClick={onView}>
+        View
+      </Button>
+    </div>
   );
 }

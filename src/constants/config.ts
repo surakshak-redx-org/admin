@@ -10,6 +10,10 @@ export const MAX_PAGE_SIZE = 100;
 /** Search input debounce on the Users page, in milliseconds. */
 export const SEARCH_DEBOUNCE_MS = 300;
 
+/** Actions the PATCH /api/users/[uid] route accepts. */
+export const USER_ACTIONS = ['suspend', 'unsuspend'] as const;
+export type UserAction = (typeof USER_ACTIONS)[number];
+
 /**
  * Report count at which a moderation row's badge turns red. Mirrors
  * `REPORT_THRESHOLD` in functions/src/moderation/onPostReported.ts — that is
@@ -41,6 +45,15 @@ export const QUERY_GC_TIME_MS = 1000 * 60 * 15;
 /** Default React Query retry count for failed queries. */
 export const QUERY_RETRY_COUNT = 1;
 
+/** How often the admin layout checks for newly submitted incident reports. */
+export const NEW_INCIDENT_POLL_INTERVAL_MS = 1000 * 15;
+
+/** How long a "New Incident Reported" toast stays on screen unless clicked or dismissed. */
+export const NEW_INCIDENT_TOAST_DURATION_MS = 1000 * 10;
+
+/** Max new incidents returned by one poll; any older ones are summarised, not listed. */
+export const NEW_INCIDENT_POLL_LIMIT = 10;
+
 /** Sort orders the /api/community-posts list accepts via `?sort=`. */
 export const COMMUNITY_POST_SORTS = ['newest', 'oldest', 'most-reported'] as const;
 
@@ -52,6 +65,15 @@ export const COMMUNITY_POST_STATUSES = ['all', 'visible', 'hidden'] as const;
  * in the app repo) are rendered as clickable links in the admin UI.
  */
 export const LOCATION_URL_PREFIX = 'https://www.google.com/maps/place/';
+
+/**
+ * Hosts community post images may be loaded from. Must stay in sync with
+ * `images.remotePatterns` in next.config.ts, otherwise next/image throws.
+ */
+export const COMMUNITY_IMAGE_HOSTS: readonly string[] = [
+  'firebasestorage.googleapis.com',
+  'lh3.googleusercontent.com',
+];
 
 /** Maximum execution duration allowed for the health check Firestore probe in milliseconds. */
 export const FIRESTORE_PROBE_TIMEOUT_MS = 3000;

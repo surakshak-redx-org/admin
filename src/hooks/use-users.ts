@@ -16,7 +16,8 @@ import { useAuth } from '@/lib/auth/session';
 import {
   getUserDetail,
   getUsers,
-  setUserSuspension,
+  suspendUser,
+  unsuspendUser,
   type UserDetailResponse,
   type UsersListResponse,
 } from '@/services/users.service';
@@ -129,38 +130,56 @@ export interface SuspendUserResult {
   isSuspended: boolean;
 }
 
-export function useSetUserSuspensionMutation(): UseMutationResult<
-  SuspendUserResult,
-  Error,
-  { uid: string; isSuspended: boolean }
-> {
+/**
+ * Custom mutation hook to suspend a user account.
+ * Automatically invalidates users queries and displays notification toasts.
+ *
+ * @returns React Query mutation result
+ */
+export function useSuspendUserMutation(): UseMutationResult<SuspendUserResult, Error, string> {
   const { idToken } = useAuth();
   const queryClient = useQueryClient();
 
-  return useMutation<
-    SuspendUserResult,
-    Error,
-    { uid: string; isSuspended: boolean }
-  >({
-    mutationFn: ({ uid, isSuspended }) => {
+  return useMutation<SuspendUserResult, Error, string>({
+    mutationFn: (uid: string): Promise<SuspendUserResult> => {
       if (!idToken) {
         throw new Error('Authentication required');
       }
+      return suspendUser(idToken, uid);
+    },
+    onSuccess: (): void => {
+      toast.success('User suspended');
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.users.all });
+    },
+    onError: (error: Error): void => {
+      toast.error(error.message || 'Failed to suspend user');
+    },
+  });
+}
 
-      return setUserSuspension(idToken, uid, isSuspended);
+/**
+ * Custom mutation hook to restore (unsuspend) a suspended user account.
+ * Automatically invalidates users queries and displays notification toasts.
+ *
+ * @returns React Query mutation result
+ */
+export function useUnsuspendUserMutation(): UseMutationResult<SuspendUserResult, Error, string> {
+  const { idToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation<SuspendUserResult, Error, string>({
+    mutationFn: (uid: string): Promise<SuspendUserResult> => {
+      if (!idToken) {
+        throw new Error('Authentication required');
+      }
+      return unsuspendUser(idToken, uid);
     },
-    onSuccess: (result) => {
-      toast.success(
-        result.isSuspended
-          ? 'User suspended'
-          : 'User suspension revoked',
-      );
-      void queryClient.invalidateQueries({
-        queryKey: QUERY_KEYS.users.all,
-      });
+    onSuccess: (): void => {
+      toast.success('User unsuspended');
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.users.all });
     },
-    onError: (error) => {
-      toast.error(error.message || 'Failed to update user suspension');
+    onError: (error: Error): void => {
+      toast.error(error.message || 'Failed to unsuspend user');
     },
   });
 }

@@ -13,6 +13,7 @@ import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import {
@@ -32,6 +33,18 @@ import { useModerationActionMutation, useModerationPostsQuery } from '@/hooks';
 import type { ModerationPost } from '@/services/moderation.service';
 import type { PostType } from '@/types/firestore.types';
 
+const PAGE_TITLE = 'Reported Posts';
+const ELLIPSIS = '\u2026';
+const ANONYMOUS_LABEL = 'Anonymous';
+const LOAD_ERROR_MESSAGE = 'Could not load reported posts.';
+const EMPTY_TITLE = 'All clear: no posts need review';
+const EMPTY_SUBTITLE = 'Posts appear here once they are hidden by user reports.';
+const RESTORE_TITLE = 'Restore this post?';
+const RESTORE_DESCRIPTION = 'This will make the post visible again and reset report count.';
+const DELETE_TITLE = 'Permanently delete this post?';
+const DELETE_DESCRIPTION =
+  'The post and its report history are removed for everyone. This cannot be undone.';
+
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
   location: 'info',
@@ -40,7 +53,7 @@ const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
 };
 
 function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text;
+  return text.length > length ? `${text.slice(0, length)}${ELLIPSIS}` : text;
 }
 
 export default function ModerationPage(): React.JSX.Element {
@@ -53,11 +66,119 @@ export default function ModerationPage(): React.JSX.Element {
 
   const posts = postsQuery.data ?? [];
 
+  const handleRetry = (): void => {
+    void postsQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
+  if (postsQuery.isLoading) {
+    content = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (postsQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
+            <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          </div>
+          <Button variant="outline" isLoading={postsQuery.isFetching} onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (posts.length === 0) {
+    content = (
+      <EmptyState
+        icon={CheckCircle2}
+        iconClassName="h-10 w-10 text-forest-green"
+        title={EMPTY_TITLE}
+        subtitle={EMPTY_SUBTITLE}
+      />
+    );
+  } else {
+    content = (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Content Preview</TableHead>
+            <TableHead>Author</TableHead>
+            <TableHead>City</TableHead>
+            <TableHead>Reports</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {posts.map((post: ModerationPost): React.JSX.Element => (
+            <TableRow key={post.id}>
+              <TableCell className="max-w-xs">
+                <div className="flex items-center gap-3">
+                  {isSupportedImageUrl(post.imageUrl) ? (
+                    <button
+                      type="button"
+                      aria-label="View post details"
+                      onClick={(): void => setPreviewPost(post)}
+                      className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-gray-100"
+                    >
+                      <Image
+                        src={post.imageUrl}
+                        alt="Post thumbnail"
+                        fill
+                        sizes="48px"
+                        className="object-cover"
+                      />
+                    </button>
+                  ) : null}
+                  <span>{truncate(post.content, CONTENT_PREVIEW_LENGTH)}</span>
+                </div>
+              </TableCell>
+              <TableCell>{post.isAnonymous ? ANONYMOUS_LABEL : post.authorName}</TableCell>
+              <TableCell>{post.city}</TableCell>
+              <TableCell>
+                <Badge
+                  variant={post.reportCount >= REPORT_COUNT_DANGER_THRESHOLD ? 'error' : 'default'}
+                >
+                  {post.reportCount}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant={TYPE_VARIANT[post.type]}>{post.type}</Badge>
+              </TableCell>
+              <TableCell>
+                {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={(): void => setPreviewPost(post)}>
+                    View Details
+                  </Button>
+                  <Button size="sm" onClick={(): void => setRestorePost(post)}>
+                    Restore
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={(): void => setDeletePost(post)}>
+                    Delete
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       {/* What this queue is was never stated anywhere on the page (BUG-009). */}
       <div>
-        <h1 className="text-2xl font-semibold text-deep-ink">Reported Posts</h1>
+        <h1 className="text-2xl font-semibold text-deep-ink">{PAGE_TITLE}</h1>
         <p className="mt-1 max-w-3xl text-sm text-stone">
           Community posts are hidden from the app automatically once{' '}
           {COMMUNITY_REPORT_HIDE_THRESHOLD} users report them. Review each one:{' '}
@@ -66,100 +187,7 @@ export default function ModerationPage(): React.JSX.Element {
         </p>
       </div>
 
-      {postsQuery.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : postsQuery.isError ? (
-        <EmptyState
-          icon={AlertCircle}
-          iconClassName="h-10 w-10 text-error-red"
-          title="Couldn't load reported posts"
-          subtitle="Refresh the page to try again."
-        />
-      ) : posts.length === 0 ? (
-        <EmptyState
-          icon={CheckCircle2}
-          iconClassName="h-10 w-10 text-forest-green"
-          title="All clear — no posts need review"
-          subtitle="Posts appear here once they are hidden by user reports."
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Content Preview</TableHead>
-              <TableHead>Author</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead>Reports</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {posts.map((post): React.JSX.Element => (
-              <TableRow key={post.id}>
-                <TableCell className="max-w-xs">
-                  <div className="flex items-center gap-3">
-                    {isSupportedImageUrl(post.imageUrl) ? (
-                      <button
-                        type="button"
-                        aria-label="View post details"
-                        onClick={(): void => setPreviewPost(post)}
-                        className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-gray-100"
-                      >
-                        <Image
-                          src={post.imageUrl}
-                          alt="Post thumbnail"
-                          fill
-                          sizes="48px"
-                          className="object-cover"
-                        />
-                      </button>
-                    ) : null}
-                    <span>{truncate(post.content, CONTENT_PREVIEW_LENGTH)}</span>
-                  </div>
-                </TableCell>
-                <TableCell>{post.isAnonymous ? 'Anonymous' : post.authorName}</TableCell>
-                <TableCell>{post.city}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      post.reportCount >= REPORT_COUNT_DANGER_THRESHOLD ? 'error' : 'default'
-                    }
-                  >
-                    {post.reportCount}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={TYPE_VARIANT[post.type]}>{post.type}</Badge>
-                </TableCell>
-                <TableCell>
-                  {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={(): void => setPreviewPost(post)}>
-                      View Details
-                    </Button>
-                    <Button size="sm" onClick={(): void => setRestorePost(post)}>
-                      Restore
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={(): void => setDeletePost(post)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      {content}
 
       {previewPost ? (
         <PostPreviewDialog
@@ -185,8 +213,8 @@ export default function ModerationPage(): React.JSX.Element {
               setRestorePost(null);
             }
           }}
-          title="Restore this post?"
-          description="This will make the post visible again and reset report count."
+          title={RESTORE_TITLE}
+          description={RESTORE_DESCRIPTION}
           confirmLabel="Restore"
           confirmVariant="default"
           isLoading={actionMutation.isPending}
@@ -211,8 +239,8 @@ export default function ModerationPage(): React.JSX.Element {
               setDeletePost(null);
             }
           }}
-          title="Permanently delete this post?"
-          description="The post and its report history are removed for everyone. This cannot be undone."
+          title={DELETE_TITLE}
+          description={DELETE_DESCRIPTION}
           confirmLabel="Delete"
           isLoading={actionMutation.isPending}
           onConfirm={(): void => {

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 
+import { NewIncidentNotifier } from '@/components/features/incidents/NewIncidentNotifier';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Spinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/lib/auth/session';
@@ -29,6 +30,7 @@ export default function AdminLayout({ children }: { children: ReactNode }): Reac
   return (
     <div className="flex h-screen">
       <Sidebar />
+      <NewIncidentNotifier />
       <main className="flex-1 overflow-auto bg-off-white">{children}</main>
     </div>
   );

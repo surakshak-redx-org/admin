@@ -97,6 +97,7 @@ export default function IncidentsPage(): React.JSX.Element {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilterValue>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
   const incidentsQuery = useIncidentsQuery(filter);
   // Duplicate clusters must include reports from every status, not only the
   // status currently selected in the tabs. The 'all' query shares its cache

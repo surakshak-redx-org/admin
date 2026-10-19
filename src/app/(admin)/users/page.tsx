@@ -7,6 +7,7 @@ import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
@@ -29,6 +30,12 @@ import {
 import type { UsersListResponse } from '@/services/users.service';
 
 type ClientUser = UsersListResponse['users'][number];
+
+const SEARCH_PLACEHOLDER = 'Search by name or city...';
+const LOAD_ERROR_MESSAGE = 'Could not load users.';
+const LOAD_MORE_ERROR_MESSAGE = 'Could not load more users.';
+const EMPTY_MESSAGE = 'No users yet.';
+const EMPTY_SEARCH_MESSAGE = 'No users match your search.';
 
 export default function UsersPage(): React.JSX.Element {
   const [search, setSearch] = useState('');
@@ -67,7 +74,10 @@ export default function UsersPage(): React.JSX.Element {
 
   const isInitialLoading = usersQuery.isLoading && cursor === null;
   const isFetchingMore = usersQuery.isFetching && cursor !== null;
+  const isInitialError = usersQuery.isError && cursor === null;
+  const isLoadMoreError = usersQuery.isError && cursor !== null;
   const nextCursor = usersQuery.data?.nextCursor ?? null;
+  const hasSearch = debouncedSearch.trim() !== '';
 
   const handleLoadMore = (): void => {
     if (nextCursor) {
@@ -75,11 +85,125 @@ export default function UsersPage(): React.JSX.Element {
     }
   };
 
+  const handleRetry = (): void => {
+    void usersQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
+  if (isInitialLoading) {
+    content = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (isInitialError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          <Button variant="outline" onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (accumulatedUsers.length === 0) {
+    content = (
+      <Card>
+        <CardContent>
+          <p className="text-sm text-stone">{hasSearch ? EMPTY_SEARCH_MESSAGE : EMPTY_MESSAGE}</p>
+        </CardContent>
+      </Card>
+    );
+  } else {
+    content = (
+      <>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>City</TableHead>
+              <TableHead>Language</TableHead>
+              <TableHead>Joined</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {accumulatedUsers.map((user: ClientUser): React.JSX.Element => (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Avatar name={user.name} src={user.profilePhotoUrl} size="sm" />
+                    <span>{user.name}</span>
+                    {user.isSuspended ? <Badge variant="error">Suspended</Badge> : null}
+                  </div>
+                </TableCell>
+                <TableCell>{user.city}</TableCell>
+                <TableCell>
+                  <Badge>{user.language.toUpperCase()}</Badge>
+                </TableCell>
+                <TableCell>
+                  {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(): void => setViewUserId(user.id)}
+                    >
+                      View
+                    </Button>
+                    {user.isSuspended ? (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={(): void => setUnsuspendUser(user)}
+                      >
+                        Unsuspend
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={(): void => setSuspendUser(user)}
+                      >
+                        Suspend
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        {isLoadMoreError ? (
+          <div className="flex items-center justify-center gap-4">
+            <p className="text-sm text-error-red">{LOAD_MORE_ERROR_MESSAGE}</p>
+            <Button variant="outline" onClick={handleRetry}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
+
+        {nextCursor && !isLoadMoreError ? (
+          <div className="flex justify-center">
+            <Button variant="outline" isLoading={isFetchingMore} onClick={handleLoadMore}>
+              Load more
+            </Button>
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold text-deep-ink">Users</h1>
       <Input
-        placeholder="Search by name or city…"
+        placeholder={SEARCH_PLACEHOLDER}
         value={search}
         onChange={(event: React.ChangeEvent<HTMLInputElement>): void =>
           setSearch(event.target.value)
@@ -87,81 +211,7 @@ export default function UsersPage(): React.JSX.Element {
         className="max-w-sm"
       />
 
-      {isInitialLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>City</TableHead>
-                <TableHead>Language</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {accumulatedUsers.map((user: ClientUser): React.JSX.Element => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Avatar name={user.name} src={user.profilePhotoUrl} size="sm" />
-                      <span>{user.name}</span>
-                      {user.isSuspended ? <Badge variant="error">Suspended</Badge> : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>{user.city}</TableCell>
-                  <TableCell>
-                    <Badge>{user.language.toUpperCase()}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(): void => setViewUserId(user.id)}
-                      >
-                        View
-                      </Button>
-                      {user.isSuspended ? (
-                        <Button
-                          size="sm"
-                          variant="default"
-                          onClick={(): void => setUnsuspendUser(user)}
-                        >
-                          Unsuspend
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={(): void => setSuspendUser(user)}
-                        >
-                          Suspend
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {nextCursor ? (
-            <div className="flex justify-center">
-              <Button variant="outline" isLoading={isFetchingMore} onClick={handleLoadMore}>
-                Load more
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
+      {content}
 
       {viewUserId ? (
         <Dialog
@@ -187,7 +237,8 @@ export default function UsersPage(): React.JSX.Element {
               <div>
                 <p className="text-lg font-semibold text-deep-ink">{detailQuery.data.user.name}</p>
                 <p className="text-sm text-stone">
-                  {detailQuery.data.user.city} · {detailQuery.data.user.language.toUpperCase()}
+                  {detailQuery.data.user.city} &middot;{' '}
+                  {detailQuery.data.user.language.toUpperCase()}
                 </p>
               </div>
               {detailQuery.data.user.isSuspended ? <Badge variant="error">Suspended</Badge> : null}

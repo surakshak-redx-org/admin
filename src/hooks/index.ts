@@ -2,6 +2,7 @@ export * from './query-keys';
 export * from './use-stats';
 export * from './use-users';
 export * from './use-incidents';
+export * from './use-new-incident-poll';
 export * from './use-moderation';
 export * from './use-unsafe-areas';
 export * from './use-admins';

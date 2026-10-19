@@ -81,6 +81,7 @@ export default function CommunityPostsPage(): React.JSX.Element {
   const [sortBy, setSortBy] = useState<CommunityPostSort>('newest');
   const [selectedPost, setSelectedPost] = useState<ClientPost | null>(null);
   const [postToDelete, setPostToDelete] = useState<ClientPost | null>(null);
+
   const postsQuery = useCommunityPostsInfiniteQuery(sortBy, statusFilter);
   const deleteMutation = useDeleteCommunityPostMutation();
 

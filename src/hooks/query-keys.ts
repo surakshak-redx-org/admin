@@ -40,6 +40,7 @@ export const QUERY_KEYS = {
       { readonly status: IncidentStatus | 'all'; readonly cursor: string | null },
     ] => ['incidents', 'list', { status: status ?? 'all', cursor: cursor ?? null }] as const,
     recent: ['incidents', 'recent'] as const,
+    latest: ['incidents', 'latest'] as const,
     details: (): readonly ['incidents', 'detail'] => ['incidents', 'detail'] as const,
     detail: (id: string): readonly ['incidents', 'detail', string] =>
       ['incidents', 'detail', id] as const,

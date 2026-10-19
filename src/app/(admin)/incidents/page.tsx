@@ -1,13 +1,14 @@
 'use client';
 
 import { formatDistanceToNow } from 'date-fns';
-import { Copy, Search } from 'lucide-react';
+import { Copy, Inbox, Search } from 'lucide-react';
 import Image from 'next/image';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
@@ -74,8 +75,17 @@ const CATEGORY_FILTER_OPTIONS: SelectOption[] = [
 
 const ALL_CITIES_VALUE = 'all';
 
+const ELLIPSIS = '\u2026';
+const EM_DASH = '\u2014';
+const SEARCH_PLACEHOLDER = `Search by title, description, or reporter${ELLIPSIS}`;
+const LOAD_ERROR_MESSAGE = 'Could not load incidents.';
+const EMPTY_ALL_TITLE = 'No incidents yet';
+const EMPTY_ALL_SUBTITLE = 'Reports submitted by users will appear here.';
+const EMPTY_STATUS_TITLE = 'No incidents with this status';
+const EMPTY_STATUS_SUBTITLE = 'Try another status tab.';
+
 function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text;
+  return text.length > length ? `${text.slice(0, length)}${ELLIPSIS}` : text;
 }
 
 function categoryLabel(category: IncidentCategory | undefined): string {
@@ -87,7 +97,7 @@ export default function IncidentsPage(): React.JSX.Element {
   const [viewIncident, setViewIncident] = useState<IncidentWithUser | null>(null);
   const [editIncident, setEditIncident] = useState<IncidentWithUser | null>(null);
 
-  // Search & advanced filters — applied client-side on top of the
+  // Search & advanced filters - applied client-side on top of the
   // status-tab-filtered result set already fetched below (the incidents
   // list, like Moderation and Unsafe Areas, is not paginated, so the full
   // set for the active status tab is already in memory).
@@ -118,7 +128,7 @@ export default function IncidentsPage(): React.JSX.Element {
   );
 
   // Looked up against the full cross-status dataset, not the tab-scoped
-  // `incidents` above — a cluster can contain a report that isn't in the
+  // `incidents` above - a cluster can contain a report that isn't in the
   // currently selected status Tab (see `allIncidentsForDuplicatesQuery`),
   // and the duplicates dialog's "View" action needs to resolve every
   // member of a cluster regardless of which tab is active.
@@ -128,7 +138,7 @@ export default function IncidentsPage(): React.JSX.Element {
 
   // Computed from `allIncidentsForDuplicates` (every report, every
   // status) rather than the tab-scoped `incidents` or the further-filtered
-  // `filteredIncidents` below — two reports about the same event are not
+  // `filteredIncidents` below - two reports about the same event are not
   // guaranteed to share a status, so clustering has to see the whole
   // dataset regardless of which status Tab or search/filter the admin
   // currently has selected.
@@ -137,7 +147,7 @@ export default function IncidentsPage(): React.JSX.Element {
   }, [allIncidentsForDuplicates]);
 
   // Cities are derived from the currently loaded incidents' reporters
-  // rather than a separate lookup — there is no standalone "list of
+  // rather than a separate lookup - there is no standalone "list of
   // cities" endpoint, and this keeps the filter scoped to cities that
   // actually have reports for the active status tab.
   const cityFilterOptions = useMemo((): SelectOption[] => {
@@ -220,6 +230,104 @@ export default function IncidentsPage(): React.JSX.Element {
     setDateTo('');
   };
 
+  const handleRetry = (): void => {
+    void incidentsQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
+  if (incidentsQuery.isLoading) {
+    content = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (incidentsQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          <Button variant="outline" onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (filteredIncidents.length === 0 && hasActiveFilters) {
+    content = (
+      <EmptyState
+        icon={Search}
+        title="No incidents match your filters"
+        subtitle="Try adjusting or clearing the search and filters above."
+        action={
+          <Button variant="outline" onClick={clearFilters}>
+            Clear Filters
+          </Button>
+        }
+      />
+    );
+  } else if (incidents.length === 0) {
+    content = (
+      <EmptyState
+        icon={Inbox}
+        title={filter === 'all' ? EMPTY_ALL_TITLE : EMPTY_STATUS_TITLE}
+        subtitle={filter === 'all' ? EMPTY_ALL_SUBTITLE : EMPTY_STATUS_SUBTITLE}
+      />
+    );
+  } else {
+    content = (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Title</TableHead>
+            <TableHead>User</TableHead>
+            <TableHead>City</TableHead>
+            <TableHead>Category</TableHead>
+            <TableHead>Photos</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredIncidents.map((incident): React.JSX.Element => (
+            <TableRow key={incident.id}>
+              <TableCell>{truncate(incident.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
+              <TableCell>{incident.user?.name ?? EM_DASH}</TableCell>
+              <TableCell>{incident.user?.city ?? EM_DASH}</TableCell>
+              <TableCell>
+                <Badge>{categoryLabel(incident.category)}</Badge>
+              </TableCell>
+              <TableCell>
+                <Badge>{incident.photoUrls.length}</Badge>
+              </TableCell>
+              <TableCell>
+                {formatDistanceToNow(new Date(incident.createdAt), { addSuffix: true })}
+              </TableCell>
+              <TableCell>
+                <StatusBadge status={incident.status} />
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(): void => setViewIncident(incident)}
+                  >
+                    View
+                  </Button>
+                  <Button size="sm" onClick={(): void => setEditIncident(incident)}>
+                    Update Status
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold text-deep-ink">Incidents</h1>
@@ -236,7 +344,7 @@ export default function IncidentsPage(): React.JSX.Element {
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <Input
             label="Search"
-            placeholder="Search by title, description, or reporter…"
+            placeholder={SEARCH_PLACEHOLDER}
             value={search}
             onChange={(event: React.ChangeEvent<HTMLInputElement>): void =>
               setSearch(event.target.value)
@@ -286,7 +394,7 @@ export default function IncidentsPage(): React.JSX.Element {
             </Button>
           ) : null}
         </div>
-        {incidentsQuery.isLoading ? null : (
+        {incidentsQuery.isLoading || incidentsQuery.isError ? null : (
           <p className="text-sm text-stone">
             Showing {filteredIncidents.length} of {incidents.length} incident
             {incidents.length === 1 ? '' : 's'}
@@ -294,72 +402,7 @@ export default function IncidentsPage(): React.JSX.Element {
         )}
       </div>
 
-      {incidentsQuery.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : filteredIncidents.length === 0 && hasActiveFilters ? (
-        <EmptyState
-          icon={Search}
-          title="No incidents match your filters"
-          subtitle="Try adjusting or clearing the search and filters above."
-          action={
-            <Button variant="outline" onClick={clearFilters}>
-              Clear Filters
-            </Button>
-          }
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Title</TableHead>
-              <TableHead>User</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Photos</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredIncidents.map((incident): React.JSX.Element => (
-              <TableRow key={incident.id}>
-                <TableCell>{truncate(incident.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
-                <TableCell>{incident.user?.name ?? '—'}</TableCell>
-                <TableCell>{incident.user?.city ?? '—'}</TableCell>
-                <TableCell>
-                  <Badge>{categoryLabel(incident.category)}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge>{incident.photoUrls.length}</Badge>
-                </TableCell>
-                <TableCell>
-                  {formatDistanceToNow(new Date(incident.createdAt), { addSuffix: true })}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={incident.status} />
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(): void => setViewIncident(incident)}
-                    >
-                      View
-                    </Button>
-                    <Button size="sm" onClick={(): void => setEditIncident(incident)}>
-                      Update Status
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      {content}
 
       {viewIncident ? (
         <Dialog
@@ -525,7 +568,7 @@ interface DuplicateClustersDialogProps {
 /**
  * Lists every detected duplicate cluster as a "master incident thread":
  * the earliest report in bold, followed by the other reports judged to be
- * about the same event. Purely a read-only summary — clicking "View" opens
+ * about the same event. Purely a read-only summary - clicking "View" opens
  * the existing single-incident detail dialog (closing this one first,
  * rather than stacking dialogs); there is no merge/delete action here,
  * since collapsing reports together is an irreversible data change this
@@ -542,7 +585,7 @@ function DuplicateClustersDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title="Possible Duplicate Incident Threads"
-      description="Reports filed close together in time and location — likely the same event."
+      description="Reports filed close together in time and location - likely the same event."
       className="max-w-2xl"
     >
       <div className="flex flex-col gap-4">
@@ -564,7 +607,7 @@ function DuplicateClustersDialog({
                   <p className="text-sm font-medium text-deep-ink">
                     {members.length} reports in this cluster
                   </p>
-                  {/* Links to the master report's own coordinates — not the
+                  {/* Links to the master report's own coordinates - not the
                       reporter's home city, which may be a different place
                       entirely from where the incident actually happened. */}
                   <a
@@ -619,7 +662,7 @@ function DuplicateClusterMemberRow({
           {truncate(incident.title, TITLE_TRUNCATE_LENGTH)}
         </span>
         <span className="text-xs text-stone">
-          {incident.user?.name ?? 'Unknown reporter'} ·{' '}
+          {incident.user?.name ?? 'Unknown reporter'} &middot;{' '}
           {formatDistanceToNow(new Date(incident.createdAt), { addSuffix: true })}
         </span>
       </div>

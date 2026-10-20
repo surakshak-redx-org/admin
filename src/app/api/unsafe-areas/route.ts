@@ -55,7 +55,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const namesById = new Map<string, string>();
     reporterDocs.forEach((doc) => {
       const name = doc.exists ? (doc.data() as Pick<SurakshakUser, 'name'>).name : undefined;
-      if (typeof name === 'string' && name.trim() !== '') namesById.set(doc.id, name);
+      if (typeof name === 'string' && name.trim() !== '') namesById.set(doc.id, name.trim());
     });
 
     return apiOk(

@@ -8,7 +8,7 @@ export type IncidentWithUser = Serialized<IncidentReport> & {
 };
 
 export interface GetIncidentsParams {
-  status?: IncidentStatus | 'all';
+  status?: IncidentStatus | 'all' | 'unresolved';
   limit?: number;
   cursor?: string | null;
 }

@@ -26,8 +26,9 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
     let reporter: Pick<SurakshakUser, 'name' | 'city'> | null = null;
     const reporterDoc = await adminDb.collection(COLLECTIONS.USERS).doc(area.reportedBy).get();
     if (reporterDoc.exists) {
-      const data = reporterDoc.data() as SurakshakUser;
-      reporter = { name: data.name, city: data.city };
+      const data = reporterDoc.data() as Pick<SurakshakUser, 'name' | 'city'>;
+      const name = typeof data.name === 'string' ? data.name.trim() : '';
+      reporter = { name: name || 'Unknown user', city: data.city };
     }
 
     return apiOk({ area, reporter });

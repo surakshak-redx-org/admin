@@ -86,7 +86,7 @@ function UnsafeAreasPageInner(): React.JSX.Element {
   } else if (areasQuery.isError) {
     content = (
       <Card>
-        <CardContent className="flex items-center justify-between gap-4">
+        <CardContent role="alert" className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
             <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
@@ -137,7 +137,7 @@ function UnsafeAreasPageInner(): React.JSX.Element {
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </TableCell>
-                <TableCell title={area.reportedBy}>
+                <TableCell>
                   {area.reporterName ?? (
                     <span className="text-stone">{UNKNOWN_REPORTER_LABEL}</span>
                   )}

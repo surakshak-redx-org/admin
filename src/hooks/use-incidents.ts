@@ -79,7 +79,7 @@ export function useRecentIncidentsQuery(
       if (!idToken) {
         throw new Error('Authentication required');
       }
-      return getIncidents(idToken, { limit });
+      return getIncidents(idToken, { status: 'unresolved', limit });
     },
     enabled: idToken !== null,
   });

@@ -199,7 +199,16 @@ export default function DashboardPage(): React.JSX.Element {
             <CardTitle>Recent Incidents</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {recentIncidents.length === 0 ? (
+            {incidentsQuery.isLoading ? (
+              <Spinner size="sm" />
+            ) : incidentsQuery.isError ? (
+              <div role="alert" className="flex items-center justify-between gap-3">
+                <p className="text-sm text-error-red">Could not load recent incidents.</p>
+                <Button variant="outline" size="sm" onClick={() => void incidentsQuery.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            ) : recentIncidents.length === 0 ? (
               <p className="text-sm text-stone">No open incidents.</p>
             ) : (
               recentIncidents.map((incident): React.JSX.Element => (

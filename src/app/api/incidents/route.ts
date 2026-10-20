@@ -6,7 +6,7 @@ import { verifyAdminToken } from '@/lib/auth/middleware';
 import { adminDb } from '@/lib/firebase/admin';
 import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
-import type { IncidentReport, IncidentStatus, SurakshakUser } from '@/types/firestore.types';
+import type { IncidentReport, SurakshakUser } from '@/types/firestore.types';
 
 const INCIDENT_LIST_FIELDS = [
   'userId',
@@ -21,16 +21,38 @@ const INCIDENT_LIST_FIELDS = [
   'adminNote',
 ] as const;
 
+const DEFAULT_RECENT_LIMIT = 10;
+const MAX_RECENT_LIMIT = 25;
+const OPEN_INCIDENT_STATUSES = ['submitted', 'under_review'] as const;
+
 export async function GET(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
 
   try {
-    const status = request.nextUrl.searchParams.get('status') as IncidentStatus | null;
+    const status = request.nextUrl.searchParams.get('status');
+    const isUnresolvedQuery = status === 'unresolved';
+    const requestedLimit = request.nextUrl.searchParams.get('limit');
+
+    if (requestedLimit !== null && !/^[1-9]\d*$/.test(requestedLimit)) {
+      return apiError('Invalid limit', 400);
+    }
+
+    const limit =
+      requestedLimit === null
+        ? isUnresolvedQuery
+          ? DEFAULT_RECENT_LIMIT
+          : undefined
+        : Math.min(Number(requestedLimit), MAX_RECENT_LIMIT);
 
     let query = adminDb.collection(COLLECTIONS.INCIDENT_REPORTS).orderBy('createdAt', 'desc');
 
-    if (
+    if (isUnresolvedQuery) {
+      query = adminDb
+        .collection(COLLECTIONS.INCIDENT_REPORTS)
+        .where('status', 'in', [...OPEN_INCIDENT_STATUSES])
+        .orderBy('createdAt', 'desc');
+    } else if (
       status === 'submitted' ||
       status === 'under_review' ||
       status === 'resolved' ||
@@ -41,6 +63,8 @@ export async function GET(request: NextRequest): Promise<Response> {
         .where('status', '==', status)
         .orderBy('createdAt', 'desc');
     }
+
+    if (limit !== undefined) query = query.limit(limit);
 
     query = query.select(...INCIDENT_LIST_FIELDS);
 

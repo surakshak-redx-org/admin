@@ -147,10 +147,22 @@ function createMockDocRef(collectionName: string, docId: string): MockDocumentRe
 }
 
 function createMockQuery(collectionName: string): MockQuery {
+  const filters: { field: string; op: string; value: unknown }[] = [];
+  const orderings: { field: string; direction: 'asc' | 'desc' }[] = [];
+  let maxResults: number | undefined;
   const query: MockQuery = {
-    where: (): MockQuery => query,
-    orderBy: (): MockQuery => query,
-    limit: (): MockQuery => query,
+    where: (field, op, value): MockQuery => {
+      filters.push({ field, op, value });
+      return query;
+    },
+    orderBy: (field, direction = 'asc'): MockQuery => {
+      orderings.push({ field, direction });
+      return query;
+    },
+    limit: (limitNum): MockQuery => {
+      maxResults = limitNum;
+      return query;
+    },
     select: (): MockQuery => query,
     get: (): Promise<MockQuerySnapshot> => {
       const err = firestoreQueryErrorToThrow ?? firestoreErrorToThrow;
@@ -158,16 +170,34 @@ function createMockQuery(collectionName: string): MockQuery {
         return Promise.reject(err);
       }
       const col = collectionDocsStore.get(collectionName);
-      const docs: MockDocumentSnapshot[] = [];
-      if (col) {
-        for (const [id, data] of col.entries()) {
-          docs.push({
-            id,
-            exists: true,
-            data: (): Record<string, unknown> => ({ ...data }),
-          });
-        }
+      let entries = [...(col?.entries() ?? [])].filter(([, data]) =>
+        filters.every(({ field, op, value }) => {
+          const actual = data[field];
+          if (op === '==') return actual === value;
+          if (op === '!=') return actual !== undefined && actual !== value;
+          if (op === 'in') return Array.isArray(value) && value.includes(actual);
+          return true;
+        }),
+      );
+      for (const { field, direction } of [...orderings].reverse()) {
+        entries = entries.filter(([, data]) => data[field] !== undefined);
+        entries.sort(([idA, a], [idB, b]) => {
+          const aValue = a[field];
+          const bValue = b[field];
+          const comparison =
+            aValue instanceof Date && bValue instanceof Date
+              ? aValue.getTime() - bValue.getTime()
+              : String(aValue).localeCompare(String(bValue));
+          const stableComparison = comparison || idA.localeCompare(idB);
+          return direction === 'desc' ? -stableComparison : stableComparison;
+        });
       }
+      if (maxResults !== undefined) entries = entries.slice(0, maxResults);
+      const docs: MockDocumentSnapshot[] = entries.map(([id, data]) => ({
+        id,
+        exists: true,
+        data: (): Record<string, unknown> => ({ ...data }),
+      }));
       return Promise.resolve({
         empty: docs.length === 0,
         size: docs.length,

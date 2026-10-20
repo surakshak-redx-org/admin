@@ -179,7 +179,7 @@ async function checkConfiguration(): Promise<DependencyCheckResult> {
   let resolvedEnv: Record<string, unknown> | null = null;
   try {
     const envModule = await import('@/config/env');
-    resolvedEnv = envModule.ENV;
+    resolvedEnv = envModule.getEnv();
   } catch {
     // Falls back to direct process.env inspection below if env schema validation threw
   }

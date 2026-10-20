@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
-import { clientAuth } from '@/lib/firebase/client';
+import { getClientAuth } from '@/lib/firebase/client';
 import type { Serialized } from '@/types/api.types';
 import type { AdminUser } from '@/types/firestore.types';
 
@@ -39,7 +39,8 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    const unsubscribe = clientAuth.onAuthStateChanged((firebaseUser) => {
+    const auth = getClientAuth();
+    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
       if (!firebaseUser) {
         setUser(null);
         setIdToken(null);
@@ -60,7 +61,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
             const body = (await response.json()) as MeResponse;
             setUser(body.data);
           } else {
-            await signOut(clientAuth);
+            await signOut(auth);
             queryClient.clear();
             setUser(null);
             setIdToken(null);
@@ -81,11 +82,11 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
 
   const signInWithGoogle = useCallback(async (): Promise<void> => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(clientAuth, provider);
+    await signInWithPopup(getClientAuth(), provider);
   }, []);
 
   const signOutAdmin = useCallback(async (): Promise<void> => {
-    await signOut(clientAuth);
+    await signOut(getClientAuth());
     queryClient.clear();
     setUser(null);
     setIdToken(null);

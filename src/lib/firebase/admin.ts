@@ -22,7 +22,23 @@ function getAdminApp(): App {
   return initializeApp({ credential: cert(serviceAccount) });
 }
 
-export const adminApp = getAdminApp();
-export const adminDb = getFirestore(adminApp);
-export const adminAuth = getAuth(adminApp);
-export const adminStorage = getStorage(adminApp);
+/**
+ * Next.js imports route modules while collecting build-time configuration.
+ * Keep Firebase initialization behind property access so those imports do not
+ * require deployment credentials. The first Firebase-backed operation still
+ * validates credentials and fails with the same explicit configuration error.
+ */
+function lazyFirebaseService<T extends object>(getService: () => T): T {
+  return new Proxy({} as T, {
+    get(_target, property): unknown {
+      const service = getService();
+      const value: unknown = Reflect.get(service, property, service);
+      return typeof value === 'function' ? value.bind(service) : value;
+    },
+  });
+}
+
+export const adminApp = lazyFirebaseService(getAdminApp);
+export const adminDb = lazyFirebaseService(() => getFirestore(getAdminApp()));
+export const adminAuth = lazyFirebaseService(() => getAuth(getAdminApp()));
+export const adminStorage = lazyFirebaseService(() => getStorage(getAdminApp()));

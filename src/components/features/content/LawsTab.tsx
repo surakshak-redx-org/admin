@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Pencil, Plus, Scale, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -10,7 +10,9 @@ import { useTogglePublished } from '@/components/features/content/useTogglePubli
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { Switch } from '@/components/ui/Switch';
@@ -27,6 +29,16 @@ import { SHORT_DESCRIPTION_MAX_LENGTH, TITLE_TRUNCATE_LENGTH } from '@/constants
 import { useDeleteLawMutation, useLawsQuery, useSaveLawMutation } from '@/hooks';
 import type { Law } from '@/types/firestore.types';
 
+const SECTION_TITLE = 'Laws';
+const ADD_LABEL = 'Add Law';
+const EDIT_DIALOG_TITLE = 'Edit Law';
+const ELLIPSIS = '\u2026';
+const LOAD_ERROR_MESSAGE = 'Could not load laws.';
+const EMPTY_TITLE = 'No laws yet';
+const EMPTY_SUBTITLE = 'Add a law to show it in the app.';
+const DELETE_TITLE = 'Delete this law?';
+const DELETE_DESCRIPTION = 'This permanently removes the law from the app. This cannot be undone.';
+
 const lawSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   shortDescription: z
@@ -42,7 +54,7 @@ const lawSchema = z.object({
 type LawFormValues = z.infer<typeof lawSchema>;
 
 function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text;
+  return text.length > length ? `${text.slice(0, length)}${ELLIPSIS}` : text;
 }
 
 export function LawsTab(): React.JSX.Element {
@@ -53,24 +65,38 @@ export function LawsTab(): React.JSX.Element {
   const deleteMutation = useDeleteLawMutation();
   const publish = useTogglePublished<Law>('laws', 'Law');
 
+  const laws = lawsQuery.data ?? [];
+
+  const handleRetry = (): void => {
+    void lawsQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
   if (lawsQuery.isLoading) {
-    return (
+    content = (
       <div className="flex justify-center py-16">
         <Spinner size="lg" />
       </div>
     );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-deep-ink">Laws</h2>
-        <Button size="sm" onClick={(): void => setDialogLaw('new')}>
-          <Plus className="h-4 w-4" />
-          Add Law
-        </Button>
-      </div>
-
+  } else if (lawsQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
+            <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          </div>
+          <Button variant="outline" isLoading={lawsQuery.isFetching} onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (laws.length === 0) {
+    content = <EmptyState icon={Scale} title={EMPTY_TITLE} subtitle={EMPTY_SUBTITLE} />;
+  } else {
+    content = (
       <Table>
         <TableHeader>
           <TableRow>
@@ -82,7 +108,7 @@ export function LawsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(lawsQuery.data ?? []).map((law: Law): React.JSX.Element => (
+          {laws.map((law: Law): React.JSX.Element => (
             <TableRow key={law.id}>
               <TableCell>{truncate(law.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -110,6 +136,20 @@ export function LawsTab(): React.JSX.Element {
           ))}
         </TableBody>
       </Table>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-deep-ink">{SECTION_TITLE}</h2>
+        <Button size="sm" onClick={(): void => setDialogLaw('new')}>
+          <Plus className="h-4 w-4" />
+          {ADD_LABEL}
+        </Button>
+      </div>
+
+      {content}
 
       {dialogLaw ? (
         <LawFormDialog
@@ -141,8 +181,8 @@ export function LawsTab(): React.JSX.Element {
               setDeleteLaw(null);
             }
           }}
-          title="Delete this law?"
-          description="This permanently removes the law from the app. This cannot be undone."
+          title={DELETE_TITLE}
+          description={DELETE_DESCRIPTION}
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
           onConfirm={(): void => {
@@ -196,7 +236,7 @@ function LawFormDialog({
           onClose();
         }
       }}
-      title={law ? 'Edit Law' : 'Add Law'}
+      title={law ? EDIT_DIALOG_TITLE : ADD_LABEL}
     >
       <form
         onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>

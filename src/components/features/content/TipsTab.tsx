@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, Lightbulb, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -10,7 +10,9 @@ import { useTogglePublished } from '@/components/features/content/useTogglePubli
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { Switch } from '@/components/ui/Switch';
@@ -27,6 +29,17 @@ import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { useDeleteTipMutation, useSaveTipMutation, useTipsQuery } from '@/hooks';
 import type { SafetyTip } from '@/types/firestore.types';
 
+const SECTION_TITLE = 'Safety Tips';
+const ADD_LABEL = 'Add Tip';
+const ADD_DIALOG_TITLE = 'Add Safety Tip';
+const EDIT_DIALOG_TITLE = 'Edit Safety Tip';
+const ELLIPSIS = '\u2026';
+const LOAD_ERROR_MESSAGE = 'Could not load safety tips.';
+const EMPTY_TITLE = 'No safety tips yet';
+const EMPTY_SUBTITLE = 'Add a tip to show it in the app.';
+const DELETE_TITLE = 'Delete this safety tip?';
+const DELETE_DESCRIPTION = 'This permanently removes the tip from the app. This cannot be undone.';
+
 const tipSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   content: z.string().min(1, 'Content is required'),
@@ -37,7 +50,7 @@ const tipSchema = z.object({
 type TipFormValues = z.infer<typeof tipSchema>;
 
 function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text;
+  return text.length > length ? `${text.slice(0, length)}${ELLIPSIS}` : text;
 }
 
 export function TipsTab(): React.JSX.Element {
@@ -48,24 +61,38 @@ export function TipsTab(): React.JSX.Element {
   const deleteMutation = useDeleteTipMutation();
   const publish = useTogglePublished<SafetyTip>('tips', 'Tip');
 
+  const tips = tipsQuery.data ?? [];
+
+  const handleRetry = (): void => {
+    void tipsQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
   if (tipsQuery.isLoading) {
-    return (
+    content = (
       <div className="flex justify-center py-16">
         <Spinner size="lg" />
       </div>
     );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-deep-ink">Safety Tips</h2>
-        <Button size="sm" onClick={(): void => setDialogTip('new')}>
-          <Plus className="h-4 w-4" />
-          Add Tip
-        </Button>
-      </div>
-
+  } else if (tipsQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
+            <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          </div>
+          <Button variant="outline" isLoading={tipsQuery.isFetching} onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (tips.length === 0) {
+    content = <EmptyState icon={Lightbulb} title={EMPTY_TITLE} subtitle={EMPTY_SUBTITLE} />;
+  } else {
+    content = (
       <Table>
         <TableHeader>
           <TableRow>
@@ -77,7 +104,7 @@ export function TipsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(tipsQuery.data ?? []).map((tip: SafetyTip): React.JSX.Element => (
+          {tips.map((tip: SafetyTip): React.JSX.Element => (
             <TableRow key={tip.id}>
               <TableCell>{truncate(tip.title, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -105,6 +132,20 @@ export function TipsTab(): React.JSX.Element {
           ))}
         </TableBody>
       </Table>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-deep-ink">{SECTION_TITLE}</h2>
+        <Button size="sm" onClick={(): void => setDialogTip('new')}>
+          <Plus className="h-4 w-4" />
+          {ADD_LABEL}
+        </Button>
+      </div>
+
+      {content}
 
       {dialogTip ? (
         <TipFormDialog
@@ -129,8 +170,8 @@ export function TipsTab(): React.JSX.Element {
               setDeleteTip(null);
             }
           }}
-          title="Delete this safety tip?"
-          description="This permanently removes the tip from the app. This cannot be undone."
+          title={DELETE_TITLE}
+          description={DELETE_DESCRIPTION}
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
           onConfirm={(): void => {
@@ -182,7 +223,7 @@ function TipFormDialog({
           onClose();
         }
       }}
-      title={tip ? 'Edit Safety Tip' : 'Add Safety Tip'}
+      title={tip ? EDIT_DIALOG_TITLE : ADD_DIALOG_TITLE}
     >
       <form
         onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>

@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -10,7 +10,9 @@ import { useTogglePublished } from '@/components/features/content/useTogglePubli
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { Switch } from '@/components/ui/Switch';
@@ -27,6 +29,16 @@ import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { useDeleteFaqMutation, useFaqsQuery, useSaveFaqMutation } from '@/hooks';
 import type { FAQ } from '@/types/firestore.types';
 
+const SECTION_TITLE = 'FAQ';
+const ADD_LABEL = 'Add FAQ';
+const EDIT_DIALOG_TITLE = 'Edit FAQ';
+const ELLIPSIS = '\u2026';
+const LOAD_ERROR_MESSAGE = 'Could not load FAQs.';
+const EMPTY_TITLE = 'No FAQs yet';
+const EMPTY_SUBTITLE = 'Add a FAQ to show it in the app.';
+const DELETE_TITLE = 'Delete this FAQ?';
+const DELETE_DESCRIPTION = 'This permanently removes the FAQ from the app. This cannot be undone.';
+
 const faqSchema = z.object({
   question: z.string().min(1, 'Question is required'),
   answer: z.string().min(1, 'Answer is required'),
@@ -37,7 +49,7 @@ const faqSchema = z.object({
 type FaqFormValues = z.infer<typeof faqSchema>;
 
 function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text;
+  return text.length > length ? `${text.slice(0, length)}${ELLIPSIS}` : text;
 }
 
 export function FaqsTab(): React.JSX.Element {
@@ -48,24 +60,38 @@ export function FaqsTab(): React.JSX.Element {
   const deleteMutation = useDeleteFaqMutation();
   const publish = useTogglePublished<FAQ>('faqs', 'FAQ');
 
+  const faqs = faqsQuery.data ?? [];
+
+  const handleRetry = (): void => {
+    void faqsQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
   if (faqsQuery.isLoading) {
-    return (
+    content = (
       <div className="flex justify-center py-16">
         <Spinner size="lg" />
       </div>
     );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-deep-ink">FAQ</h2>
-        <Button size="sm" onClick={(): void => setDialogFaq('new')}>
-          <Plus className="h-4 w-4" />
-          Add FAQ
-        </Button>
-      </div>
-
+  } else if (faqsQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
+            <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          </div>
+          <Button variant="outline" isLoading={faqsQuery.isFetching} onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (faqs.length === 0) {
+    content = <EmptyState icon={FileText} title={EMPTY_TITLE} subtitle={EMPTY_SUBTITLE} />;
+  } else {
+    content = (
       <Table>
         <TableHeader>
           <TableRow>
@@ -77,7 +103,7 @@ export function FaqsTab(): React.JSX.Element {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {(faqsQuery.data ?? []).map((faq: FAQ): React.JSX.Element => (
+          {faqs.map((faq: FAQ): React.JSX.Element => (
             <TableRow key={faq.id}>
               <TableCell>{truncate(faq.question, TITLE_TRUNCATE_LENGTH)}</TableCell>
               <TableCell>
@@ -105,6 +131,20 @@ export function FaqsTab(): React.JSX.Element {
           ))}
         </TableBody>
       </Table>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-deep-ink">{SECTION_TITLE}</h2>
+        <Button size="sm" onClick={(): void => setDialogFaq('new')}>
+          <Plus className="h-4 w-4" />
+          {ADD_LABEL}
+        </Button>
+      </div>
+
+      {content}
 
       {dialogFaq ? (
         <FaqFormDialog
@@ -129,8 +169,8 @@ export function FaqsTab(): React.JSX.Element {
               setDeleteFaq(null);
             }
           }}
-          title="Delete this FAQ?"
-          description="This permanently removes the FAQ from the app. This cannot be undone."
+          title={DELETE_TITLE}
+          description={DELETE_DESCRIPTION}
           confirmLabel="Delete"
           isLoading={deleteMutation.isPending}
           onConfirm={(): void => {
@@ -182,7 +222,7 @@ function FaqFormDialog({
           onClose();
         }
       }}
-      title={faq ? 'Edit FAQ' : 'Add FAQ'}
+      title={faq ? EDIT_DIALOG_TITLE : ADD_LABEL}
     >
       <form
         onSubmit={(event: React.FormEvent<HTMLFormElement>): void =>

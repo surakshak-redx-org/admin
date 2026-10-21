@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
-import { forbiddenResponse, verifyAdminToken } from '@/lib/auth/middleware';
+import { requireSuperAdmin } from '@/lib/auth/middleware';
 import { adminDb } from '@/lib/firebase/admin';
 
 interface RouteContext {
@@ -10,9 +10,9 @@ interface RouteContext {
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext): Promise<Response> {
-  const session = await verifyAdminToken(request);
-  if (!session) return apiError('Unauthorized', 401);
-  if (session.admin.role !== 'super_admin') return forbiddenResponse();
+  const check = await requireSuperAdmin(request);
+  if (!check.ok) return check.response;
+  const { session } = check;
 
   try {
     const { uid } = await context.params;

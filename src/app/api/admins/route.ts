@@ -1,9 +1,9 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import type { NextRequest } from 'next/server';
 
-import { COLLECTIONS } from '@/constants/firestore';
+import { ADMIN_ROLES, COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
-import { forbiddenResponse, verifyAdminToken } from '@/lib/auth/middleware';
+import { requireSuperAdmin } from '@/lib/auth/middleware';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
 import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
@@ -12,9 +12,8 @@ import type { AdminUser } from '@/types/firestore.types';
 const ADMIN_LIST_FIELDS = ['uid', 'email', 'displayName', 'photoUrl', 'role', 'createdAt'] as const;
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const session = await verifyAdminToken(request);
-  if (!session) return apiError('Unauthorized', 401);
-  if (session.admin.role !== 'super_admin') return forbiddenResponse();
+  const check = await requireSuperAdmin(request);
+  if (!check.ok) return check.response;
 
   try {
     const snap = await adminDb
@@ -35,12 +34,14 @@ interface AddAdminBody {
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
-  const session = await verifyAdminToken(request);
-  if (!session) return apiError('Unauthorized', 401);
-  if (session.admin.role !== 'super_admin') return forbiddenResponse();
+  const check = await requireSuperAdmin(request);
+  if (!check.ok) return check.response;
 
   try {
-    const { email } = (await request.json()) as AddAdminBody;
+    const { email } = (await request.json()) as Partial<AddAdminBody>;
+    if (typeof email !== 'string' || email.trim() === '') {
+      return apiError('Email is required', 400);
+    }
 
     let firebaseUser;
     try {
@@ -50,12 +51,16 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const ref = adminDb.collection(COLLECTIONS.ADMINS).doc(firebaseUser.uid);
+    // `set` replaces the whole document, so adding an existing admin would
+    // silently demote a super_admin to `admin`.
+    if ((await ref.get()).exists) return apiError('This user is already an admin', 409);
+
     await ref.set({
       uid: firebaseUser.uid,
       email: firebaseUser.email ?? email,
       displayName: firebaseUser.displayName ?? email,
       photoUrl: firebaseUser.photoURL ?? '',
-      role: 'admin',
+      role: ADMIN_ROLES.ADMIN,
       createdAt: FieldValue.serverTimestamp(),
     });
 

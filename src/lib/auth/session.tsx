@@ -42,6 +42,9 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
     const auth = getClientAuth();
     const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
       if (!firebaseUser) {
+        // Also covers sign-out from another tab or an expired session, which
+        // never goes through signOutAdmin — cached admin data must not outlive it.
+        queryClient.clear();
         setUser(null);
         setIdToken(null);
         setIsLoading(false);
@@ -65,7 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
             queryClient.clear();
             setUser(null);
             setIdToken(null);
-            router.push('/login?error=not_admin');
+            router.replace('/login?error=not_admin');
           }
         } catch {
           setUser(null);
@@ -80,17 +83,33 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
     return unsubscribe;
   }, [router, queryClient]);
 
+  // A page restored from the browser's back/forward cache is a frozen snapshot of
+  // the old session, including any admin data on screen. Reload it so the auth
+  // state is re-checked and signed-out visitors land on /login.
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent): void => {
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return (): void => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+
   const signInWithGoogle = useCallback(async (): Promise<void> => {
     const provider = new GoogleAuthProvider();
     await signInWithPopup(getClientAuth(), provider);
   }, []);
 
   const signOutAdmin = useCallback(async (): Promise<void> => {
-    await signOut(getClientAuth());
-    queryClient.clear();
-    setUser(null);
-    setIdToken(null);
-    router.push('/login');
+    try {
+      await signOut(getClientAuth());
+    } finally {
+      // Runs even if sign-out rejects, so no admin data is left on screen or cached.
+      queryClient.clear();
+      setUser(null);
+      setIdToken(null);
+      // `replace`, not `push`: Back must not return to a protected page.
+      router.replace('/login');
+    }
   }, [router, queryClient]);
 
   return (

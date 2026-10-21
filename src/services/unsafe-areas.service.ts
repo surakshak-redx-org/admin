@@ -66,19 +66,21 @@ export const getUnsafeArea = getUnsafeAreaDetail;
  * @param idToken Firebase ID token for authentication
  * @param id Unsafe area document ID
  * @param action Approval or rejection action
+ * @param reason Why the report is rejected; required by the API for 'reject'
  * @returns Action status confirmation
  */
 export async function executeUnsafeAreaAction(
   idToken: string,
   id: string,
   action: 'approve' | 'reject',
+  reason?: string,
 ): Promise<{ id: string; status?: string; deleted?: boolean }> {
   return apiFetch<{ id: string; status?: string; deleted?: boolean }>(
     `/api/unsafe-areas/${encodeURIComponent(id)}`,
     idToken,
     {
       method: 'PATCH',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, reason }),
     },
   );
 }

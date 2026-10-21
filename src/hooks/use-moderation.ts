@@ -21,6 +21,7 @@ import {
 export interface ModerationActionVariables {
   id: string;
   action: 'restore' | 'delete';
+  reason?: string;
 }
 
 export interface ModerationActionResult {
@@ -78,7 +79,7 @@ export function useModerationActionMutation(): UseMutationResult<
       if (!idToken) {
         throw new Error('Authentication required');
       }
-      return executeModerationAction(idToken, variables.id, variables.action);
+      return executeModerationAction(idToken, variables.id, variables.action, variables.reason);
     },
     onSuccess: (_data: ModerationActionResult, variables: ModerationActionVariables): void => {
       toast.success(

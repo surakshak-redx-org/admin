@@ -9,6 +9,7 @@ import {
   isSupportedImageUrl,
   PostPreviewDialog,
 } from '@/components/features/moderation/PostPreviewDialog';
+import { ReasonDialog } from '@/components/features/moderation/ReasonDialog';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeVariant } from '@/components/ui/Badge';
@@ -43,7 +44,7 @@ const RESTORE_TITLE = 'Restore this post?';
 const RESTORE_DESCRIPTION = 'This will make the post visible again and reset report count.';
 const DELETE_TITLE = 'Permanently delete this post?';
 const DELETE_DESCRIPTION =
-  'The post and its report history are removed for everyone. This cannot be undone.';
+  'The post is removed for everyone. A copy is kept in the admin audit log with your reason.';
 
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
@@ -232,20 +233,15 @@ export default function ModerationPage(): React.JSX.Element {
       ) : null}
 
       {deletePost ? (
-        <AlertDialog
-          open
-          onOpenChange={(open: boolean): void => {
-            if (!open) {
-              setDeletePost(null);
-            }
-          }}
+        <ReasonDialog
+          onClose={(): void => setDeletePost(null)}
           title={DELETE_TITLE}
           description={DELETE_DESCRIPTION}
           confirmLabel="Delete"
           isLoading={actionMutation.isPending}
-          onConfirm={(): void => {
+          onConfirm={(reason: string): void => {
             actionMutation.mutate(
-              { id: deletePost.id, action: 'delete' },
+              { id: deletePost.id, action: 'delete', reason },
               {
                 onSuccess: (): void => {
                   setDeletePost(null);

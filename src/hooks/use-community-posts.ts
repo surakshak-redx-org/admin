@@ -42,23 +42,33 @@ export function useCommunityPostsInfiniteQuery(
   >);
 }
 
+export interface DeleteCommunityPostVariables {
+  id: string;
+  reason: string;
+}
+
+export interface DeleteCommunityPostResult {
+  id: string;
+  deleted: boolean;
+}
+
 /**
- * Mutation hook to permanently delete a community post.
+ * Mutation hook to permanently delete a community post; the reason is kept in the audit log.
  * Invalidates communityPosts, moderation, and stats queries.
  *
  * @returns React Query mutation result
  */
 export function useDeleteCommunityPostMutation(): UseMutationResult<
-  { id: string; deleted: boolean },
+  DeleteCommunityPostResult,
   Error,
-  string
+  DeleteCommunityPostVariables
 > {
   const { idToken } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string): Promise<{ id: string; deleted: boolean }> =>
-      deleteCommunityPost(idToken ?? '', id),
+    mutationFn: (variables: DeleteCommunityPostVariables): Promise<DeleteCommunityPostResult> =>
+      deleteCommunityPost(idToken ?? '', variables.id, variables.reason),
     onSuccess: (): void => {
       toast.success('Post permanently deleted');
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.communityPosts.all });

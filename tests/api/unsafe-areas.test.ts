@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { PATCH } from '@/app/api/unsafe-areas/[id]/route';
 import { GET } from '@/app/api/unsafe-areas/route';
-import { COLLECTIONS } from '@/constants/firestore';
+import { AUDIT_ACTIONS, COLLECTIONS } from '@/constants/firestore';
 
 import {
+  getCollectionDocs,
   mockAdminAuth,
   resetFirestoreMocks,
   setCollectionDocs,
+  Timestamp,
 } from '../mocks/firebase-admin.mock';
 
 interface ApiResponse<T> {
@@ -69,11 +71,11 @@ describe('PATCH /api/unsafe-areas/[id]', () => {
     setCollectionDocs('admins', [{ id: adminUid, data: { uid: adminUid, role: 'admin' } }]);
   });
 
-  function patchRequest(id: string, action: string): NextRequest {
+  function patchRequest(id: string, action: string, reason?: string): NextRequest {
     return new NextRequest(`http://localhost:3000/api/unsafe-areas/${id}`, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, reason }),
     });
   }
 
@@ -96,12 +98,60 @@ describe('PATCH /api/unsafe-areas/[id]', () => {
       { id: 'a1', data: { status: 'pending', pinColor: 'orange' } },
     ]);
 
-    const response = await PATCH(patchRequest('a1', 'reject'), {
+    const response = await PATCH(patchRequest('a1', 'reject', 'Duplicate of an existing report'), {
       params: Promise.resolve({ id: 'a1' }),
     });
 
     expect(response.status).toBe(200);
     const json = (await response.json()) as ApiResponse<{ status: string }>;
     expect(json.data?.status).toBe('rejected');
+  });
+
+  it('refuses to reject without a reason and leaves the report untouched', async (): Promise<void> => {
+    setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
+      { id: 'a1', data: { status: 'pending', pinColor: 'orange' } },
+    ]);
+
+    const response = await PATCH(patchRequest('a1', 'reject'), {
+      params: Promise.resolve({ id: 'a1' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(getCollectionDocs(COLLECTIONS.UNSAFE_AREAS)[0]?.data.status).toBe('pending');
+    expect(getCollectionDocs(COLLECTIONS.AUDIT_LOGS)).toHaveLength(0);
+  });
+
+  it('keeps the rejected report with who, when and why, and logs it', async (): Promise<void> => {
+    const reason = 'Location is a private home, not a public area';
+    setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
+      { id: 'a1', data: { title: 'Dark lane', status: 'pending', pinColor: 'red' } },
+    ]);
+
+    const response = await PATCH(patchRequest('a1', 'reject', reason), {
+      params: Promise.resolve({ id: 'a1' }),
+    });
+
+    expect(response.status).toBe(200);
+
+    const areas = getCollectionDocs(COLLECTIONS.UNSAFE_AREAS);
+    expect(areas).toHaveLength(1);
+    expect(areas[0]?.data).toMatchObject({
+      title: 'Dark lane',
+      status: 'rejected',
+      pinColor: 'orange',
+      rejectedBy: adminUid,
+      rejectionReason: reason,
+    });
+    expect(areas[0]?.data.rejectedAt).toBeInstanceOf(Timestamp);
+
+    const logs = getCollectionDocs(COLLECTIONS.AUDIT_LOGS);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.data).toMatchObject({
+      action: AUDIT_ACTIONS.REJECT_UNSAFE_AREA,
+      targetId: 'a1',
+      reason,
+      adminUid,
+      snapshot: { title: 'Dark lane', status: 'pending' },
+    });
   });
 });

@@ -47,17 +47,20 @@ export async function getCommunityPosts(
  *
  * @param idToken Firebase ID token for authentication
  * @param id Post document ID
+ * @param reason Why the post is deleted; recorded in the admin audit log
  * @returns Deletion confirmation
  */
 export async function deleteCommunityPost(
   idToken: string,
   id: string,
+  reason: string,
 ): Promise<{ id: string; deleted: boolean }> {
   return apiFetch<{ id: string; deleted: boolean }>(
     `/api/community-posts/${encodeURIComponent(id)}`,
     idToken,
     {
       method: 'DELETE',
+      body: JSON.stringify({ reason }),
     },
   );
 }

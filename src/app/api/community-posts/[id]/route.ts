@@ -1,9 +1,13 @@
 import type { NextRequest } from 'next/server';
 
-import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
-import { adminDb } from '@/lib/firebase/admin';
+import {
+  deletePostWithAudit,
+  parseReason,
+  readJsonBody,
+  REASON_ERROR,
+} from '@/lib/moderation/audit';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -15,12 +19,15 @@ export async function DELETE(request: NextRequest, context: RouteContext): Promi
 
   try {
     const { id } = await context.params;
-    const ref = adminDb.collection(COLLECTIONS.COMMUNITY).doc(id);
-    const doc = await ref.get();
+    const reason = parseReason(await readJsonBody(request));
+    if (!reason) return apiError(REASON_ERROR, 400);
 
-    if (!doc.exists) return apiError('Post not found', 404);
-
-    await ref.delete();
+    const deleted = await deletePostWithAudit(
+      id,
+      { uid: session.uid, email: session.admin.email },
+      reason,
+    );
+    if (!deleted) return apiError('Post not found', 404);
 
     return apiOk({ id, deleted: true });
   } catch (error) {

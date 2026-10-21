@@ -62,6 +62,10 @@ export interface UnsafeArea {
   downvotes: number;
   voterIds: string[];
   createdAt: Timestamp;
+  /** Set by the admin dashboard when a report is rejected; kept as rejection history. */
+  rejectedBy?: string;
+  rejectedAt?: Timestamp;
+  rejectionReason?: string;
 }
 
 // ─── Incidents ──────────────────────────────────────────────────────
@@ -179,6 +183,22 @@ export interface AdminUser {
   fcmToken?: string;
   role: AdminRole;
   createdAt: Timestamp;
+}
+
+/**
+ * Mirrors Firestore `adminAuditLogs/{logId}`. Written by the admin dashboard
+ * whenever a post is deleted or an unsafe-area report is rejected.
+ */
+export interface AuditLog {
+  action: 'delete_post' | 'reject_unsafe_area';
+  targetCollection: string;
+  targetId: string;
+  reason: string;
+  adminUid: string;
+  adminEmail: string;
+  createdAt: Timestamp;
+  /** Copy of the target document as it was before the action. */
+  snapshot: Record<string, unknown>;
 }
 
 // ─── Dashboard Stats ────────────────────────────────────────────────

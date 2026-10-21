@@ -14,7 +14,9 @@ export interface AlertDialogProps {
   cancelLabel?: string;
   confirmVariant?: ButtonVariant;
   isLoading?: boolean;
+  confirmDisabled?: boolean;
   onConfirm: () => void;
+  children?: React.ReactNode;
 }
 
 export function AlertDialog({
@@ -26,7 +28,9 @@ export function AlertDialog({
   cancelLabel = 'Cancel',
   confirmVariant = 'destructive',
   isLoading = false,
+  confirmDisabled = false,
   onConfirm,
+  children,
 }: AlertDialogProps): React.JSX.Element {
   return (
     <AlertDialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -39,11 +43,17 @@ export function AlertDialog({
           <AlertDialogPrimitive.Description className="mt-2 text-sm text-stone">
             {description}
           </AlertDialogPrimitive.Description>
+          {children ? <div className="mt-4 space-y-3">{children}</div> : null}
           <div className="mt-6 flex justify-end gap-2">
             <AlertDialogPrimitive.Cancel asChild>
               <Button variant="outline">{cancelLabel}</Button>
             </AlertDialogPrimitive.Cancel>
-            <Button variant={confirmVariant} isLoading={isLoading} onClick={onConfirm}>
+            <Button
+              variant={confirmVariant}
+              isLoading={isLoading}
+              disabled={confirmDisabled || isLoading}
+              onClick={onConfirm}
+            >
               {confirmLabel}
             </Button>
           </div>

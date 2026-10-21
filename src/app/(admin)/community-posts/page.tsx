@@ -5,6 +5,7 @@ import { RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import { useMemo, useState } from 'react';
 
+import { ReasonDialog } from '@/components/features/moderation/ReasonDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -32,6 +33,10 @@ import type { CommunityPost, PostType } from '@/types/firestore.types';
 type ClientPost = Serialized<CommunityPost> & { id: string };
 type CommunityPostSort = (typeof COMMUNITY_POST_SORTS)[number];
 type CommunityPostStatus = (typeof COMMUNITY_POST_STATUSES)[number];
+
+const DELETE_POST_TITLE = 'Delete Community Post';
+const DELETE_POST_DESCRIPTION =
+  'The post is removed for everyone. A copy is kept in the admin audit log with your reason.';
 
 function isCommunityPostSort(value: string): value is CommunityPostSort {
   return COMMUNITY_POST_SORTS.some((sort) => sort === value);
@@ -104,13 +109,16 @@ export default function CommunityPostsPage(): React.JSX.Element {
     );
   }, [posts, search]);
 
-  const handleDelete = (): void => {
+  const handleDelete = (reason: string): void => {
     if (!postToDelete) return;
-    deleteMutation.mutate(postToDelete.id, {
-      onSettled: () => {
-        setPostToDelete(null);
+    deleteMutation.mutate(
+      { id: postToDelete.id, reason },
+      {
+        onSettled: () => {
+          setPostToDelete(null);
+        },
       },
-    });
+    );
   };
 
   return (
@@ -351,39 +359,18 @@ export default function CommunityPostsPage(): React.JSX.Element {
       ) : null}
 
       {postToDelete ? (
-        <Dialog
-          open
-          onOpenChange={(open) => !open && setPostToDelete(null)}
-          title="Delete Community Post"
+        <ReasonDialog
+          onClose={() => setPostToDelete(null)}
+          title={DELETE_POST_TITLE}
+          description={DELETE_POST_DESCRIPTION}
+          confirmLabel="Delete"
+          isLoading={deleteMutation.isPending}
+          onConfirm={handleDelete}
         >
-          <div className="space-y-4">
-            <p className="text-sm text-stone">
-              Are you sure you want to delete this community post? This action cannot be undone.
-            </p>
-
-            <div className="rounded-lg border border-stone/20 p-4">
-              <p className="text-sm text-deep-ink">{truncate(postToDelete.content, 120)}</p>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setPostToDelete(null)}
-                disabled={deleteMutation.isPending}
-              >
-                Cancel
-              </Button>
-
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                isLoading={deleteMutation.isPending}
-              >
-                Delete
-              </Button>
-            </div>
+          <div className="rounded-lg border border-stone/20 p-4">
+            <p className="text-sm text-deep-ink">{truncate(postToDelete.content, 120)}</p>
           </div>
-        </Dialog>
+        </ReasonDialog>
       ) : null}
     </div>
   );

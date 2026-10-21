@@ -2,10 +2,12 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { PATCH } from '@/app/api/moderation/[id]/route';
 import { GET } from '@/app/api/moderation/route';
-import { COLLECTIONS } from '@/constants/firestore';
+import { AUDIT_ACTIONS, COLLECTIONS } from '@/constants/firestore';
 
 import {
+  getCollectionDocs,
   mockAdminAuth,
   resetFirestoreMocks,
   setCollectionDocs,
@@ -71,5 +73,87 @@ describe('GET /api/moderation', () => {
 
     expect(response.status).toBe(200);
     expect(json.data?.[0]?.imageUrl).toBe(IMAGE_URL);
+  });
+});
+
+describe('PATCH /api/moderation/[id]', () => {
+  const adminUid = 'admin-uid';
+  const adminEmail = 'admin@surakshak.in';
+  const reason = 'Targets another user with abuse';
+
+  beforeEach((): void => {
+    resetFirestoreMocks();
+    mockAdminAuth.verifyIdToken.mockResolvedValue({
+      uid: adminUid,
+      email: adminEmail,
+    } as unknown as DecodedIdToken);
+    setCollectionDocs('admins', [
+      { id: adminUid, data: { uid: adminUid, email: adminEmail, role: 'admin' } },
+    ]);
+    setCollectionDocs(COLLECTIONS.COMMUNITY, [
+      { id: 'p1', data: { content: 'Reported post', isHidden: true, reportCount: 5 } },
+    ]);
+  });
+
+  function patchRequest(action: string, body: Record<string, unknown> = {}): NextRequest {
+    return new NextRequest('http://localhost:3000/api/moderation/p1', {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...body }),
+    });
+  }
+
+  const context = { params: Promise.resolve({ id: 'p1' }) };
+
+  it('refuses to delete without a reason and keeps the post', async (): Promise<void> => {
+    const response = await PATCH(patchRequest('delete'), context);
+
+    expect(response.status).toBe(400);
+    expect(getCollectionDocs(COLLECTIONS.COMMUNITY)).toHaveLength(1);
+    expect(getCollectionDocs(COLLECTIONS.AUDIT_LOGS)).toHaveLength(0);
+  });
+
+  it('refuses a blank reason', async (): Promise<void> => {
+    const response = await PATCH(patchRequest('delete', { reason: '  ' }), context);
+
+    expect(response.status).toBe(400);
+    expect(getCollectionDocs(COLLECTIONS.COMMUNITY)).toHaveLength(1);
+  });
+
+  it('deletes with a reason and writes an audit log containing the post', async (): Promise<void> => {
+    const response = await PATCH(patchRequest('delete', { reason }), context);
+
+    expect(response.status).toBe(200);
+    expect(getCollectionDocs(COLLECTIONS.COMMUNITY)).toHaveLength(0);
+
+    const logs = getCollectionDocs(COLLECTIONS.AUDIT_LOGS);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.data).toMatchObject({
+      action: AUDIT_ACTIONS.DELETE_POST,
+      targetId: 'p1',
+      reason,
+      adminUid,
+      adminEmail,
+      snapshot: { content: 'Reported post', reportCount: 5 },
+    });
+  });
+
+  it('returns 404 when deleting a post that does not exist', async (): Promise<void> => {
+    setCollectionDocs(COLLECTIONS.COMMUNITY, []);
+
+    const response = await PATCH(patchRequest('delete', { reason }), context);
+
+    expect(response.status).toBe(404);
+    expect(getCollectionDocs(COLLECTIONS.AUDIT_LOGS)).toHaveLength(0);
+  });
+
+  it('restores a post without needing a reason', async (): Promise<void> => {
+    const response = await PATCH(patchRequest('restore'), context);
+
+    expect(response.status).toBe(200);
+    expect(getCollectionDocs(COLLECTIONS.COMMUNITY)[0]?.data).toMatchObject({
+      isHidden: false,
+      reportCount: 0,
+    });
   });
 });

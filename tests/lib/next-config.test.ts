@@ -39,7 +39,10 @@ describe('next.config security headers', () => {
     const rules = await loadRules();
 
     for (const path of EXCLUDED_PATHS) {
-      expect(rules.some((rule) => ruleMatches(rule, path)), path).toBe(false);
+      expect(
+        rules.some((rule) => ruleMatches(rule, path)),
+        path,
+      ).toBe(false);
     }
   });
 });

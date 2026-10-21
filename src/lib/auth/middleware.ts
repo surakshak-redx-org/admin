@@ -12,8 +12,7 @@ export interface AdminSession {
 }
 
 export type SuperAdminCheck =
-  | { ok: true; session: AdminSession }
-  | { ok: false; response: NextResponse };
+  { ok: true; session: AdminSession } | { ok: false; response: NextResponse };
 
 export async function verifyAdminToken(request: NextRequest): Promise<AdminSession | null> {
   const authorization = request.headers.get('Authorization');

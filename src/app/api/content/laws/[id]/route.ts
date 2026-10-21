@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
+import { lawUpdateSchema, validationMessage } from '@/lib/content/content-validation';
 import { deleteContent, applyPublishPatch, updateContent } from '@/lib/content/content.service';
 
 interface RouteContext {
@@ -15,8 +16,10 @@ export async function PUT(request: NextRequest, context: RouteContext): Promise<
 
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as Record<string, unknown>;
-    await updateContent(COLLECTIONS.LAWS, id, body);
+    const parsed = lawUpdateSchema.safeParse(await request.json());
+    if (!parsed.success) return apiError(validationMessage(parsed.error), 400);
+
+    await updateContent(COLLECTIONS.LAWS, id, parsed.data);
     return apiOk({ id });
   } catch (error) {
     console.error('PUT /api/content/laws/[id] failed:', error);

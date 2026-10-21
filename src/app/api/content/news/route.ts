@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
+import { newsBodySchema, validationMessage } from '@/lib/content/content-validation';
 import { adminDb } from '@/lib/firebase/admin';
 import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
@@ -39,22 +40,15 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 }
 
-interface CreateNewsBody {
-  title: string;
-  summary: string;
-  content: string;
-  imageUrl: string;
-  category: string;
-  isPublished: boolean;
-  publishedAt?: string;
-}
-
 export async function POST(request: NextRequest): Promise<Response> {
   const session = await verifyAdminToken(request);
   if (!session) return apiError('Unauthorized', 401);
 
   try {
-    const body = (await request.json()) as CreateNewsBody;
+    const parsed = newsBodySchema.safeParse(await request.json());
+    if (!parsed.success) return apiError(validationMessage(parsed.error), 400);
+
+    const body = parsed.data;
     const publishedAt = body.publishedAt
       ? Timestamp.fromDate(new Date(body.publishedAt))
       : Timestamp.now();

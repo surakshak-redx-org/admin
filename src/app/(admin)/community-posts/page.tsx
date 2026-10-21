@@ -46,6 +46,7 @@ const TYPE_VARIANT: Record<PostType, 'default' | 'info' | 'error'> = {
   location: 'info',
   image: 'default',
   help_request: 'error',
+  incident: 'error',
 };
 
 function formatPostType(type: PostType): string {

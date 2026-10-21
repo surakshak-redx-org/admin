@@ -26,16 +26,17 @@ import {
 import { Textarea } from '@/components/ui/Textarea';
 import { TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { useDeleteNewsMutation, useNewsQuery, useSaveNewsMutation } from '@/hooks';
+import { imageUrlField, plainTextField, publishedAtField } from '@/lib/content/content-validation';
 import type { NewsItemWithId } from '@/services/content.service';
 
 const newsSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
-  summary: z.string().min(1, 'Summary is required'),
-  content: z.string().min(1, 'Content is required'),
-  imageUrl: z.string(),
-  category: z.string().min(1, 'Category is required'),
+  title: plainTextField('Title is required'),
+  summary: plainTextField('Summary is required'),
+  content: plainTextField('Content is required'),
+  imageUrl: imageUrlField,
+  category: plainTextField('Category is required'),
   isPublished: z.boolean(),
-  publishedAt: z.string(),
+  publishedAt: publishedAtField,
 });
 
 type NewsFormValues = z.infer<typeof newsSchema>;
@@ -218,9 +219,18 @@ function NewsFormDialog({
           {...register('content')}
           error={errors.content?.message}
         />
-        <Input label="Image URL (optional)" {...register('imageUrl')} />
+        <Input
+          label="Image URL (optional)"
+          {...register('imageUrl')}
+          error={errors.imageUrl?.message}
+        />
         <Input label="Category" {...register('category')} error={errors.category?.message} />
-        <Input type="datetime-local" label="Published At" {...register('publishedAt')} />
+        <Input
+          type="datetime-local"
+          label="Published At"
+          {...register('publishedAt')}
+          error={errors.publishedAt?.message}
+        />
         <Controller
           control={control}
           name="isPublished"

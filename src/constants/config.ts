@@ -77,3 +77,12 @@ export const COMMUNITY_IMAGE_HOSTS: readonly string[] = [
 
 /** Maximum execution duration allowed for the health check Firestore probe in milliseconds. */
 export const FIRESTORE_PROBE_TIMEOUT_MS = 3000;
+
+/** BroadcastChannel that tells every open admin tab when one of them signs out. */
+export const AUTH_BROADCAST_CHANNEL = 'surakshak-admin-auth';
+
+/** Message posted on AUTH_BROADCAST_CHANNEL when an admin signs out. */
+export const AUTH_SIGNED_OUT_MESSAGE = 'signed-out';
+
+/** Error raised instead of sending an API request once this tab has no signed-in user. */
+export const SESSION_ENDED_ERROR = 'Session ended. Please sign in again.';

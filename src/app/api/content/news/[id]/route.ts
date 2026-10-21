@@ -4,6 +4,7 @@ import type { NextRequest } from 'next/server';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
+import { newsUpdateSchema, validationMessage } from '@/lib/content/content-validation';
 import { applyPublishPatch } from '@/lib/content/content.service';
 import { adminDb } from '@/lib/firebase/admin';
 
@@ -17,10 +18,13 @@ export async function PUT(request: NextRequest, context: RouteContext): Promise<
 
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as Record<string, unknown> & { publishedAt?: string };
-    const update: Record<string, unknown> = { ...body };
-    if (typeof body.publishedAt === 'string') {
-      update.publishedAt = Timestamp.fromDate(new Date(body.publishedAt));
+    const parsed = newsUpdateSchema.safeParse(await request.json());
+    if (!parsed.success) return apiError(validationMessage(parsed.error), 400);
+
+    const { publishedAt, ...fields } = parsed.data;
+    const update: Record<string, unknown> = { ...fields };
+    if (publishedAt) {
+      update.publishedAt = Timestamp.fromDate(new Date(publishedAt));
     }
     await adminDb.collection(COLLECTIONS.NEWS).doc(id).update(update);
     return apiOk({ id });

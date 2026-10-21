@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
+import { broadcastSignOut, subscribeToSignOut } from '@/lib/auth/cross-tab';
 import { getClientAuth } from '@/lib/firebase/client';
 import type { Serialized } from '@/types/api.types';
 import type { AdminUser } from '@/types/firestore.types';
@@ -80,6 +81,17 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
     return unsubscribe;
   }, [router, queryClient]);
 
+  useEffect(() => {
+    return subscribeToSignOut((): void => {
+      setUser(null);
+      setIdToken(null);
+      queryClient.clear();
+      void signOut(getClientAuth()).catch((error: unknown): void => {
+        console.error('Cross-tab sign-out failed:', error);
+      });
+    });
+  }, [queryClient]);
+
   const signInWithGoogle = useCallback(async (): Promise<void> => {
     const provider = new GoogleAuthProvider();
     await signInWithPopup(getClientAuth(), provider);
@@ -87,6 +99,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
 
   const signOutAdmin = useCallback(async (): Promise<void> => {
     await signOut(getClientAuth());
+    broadcastSignOut();
     queryClient.clear();
     setUser(null);
     setIdToken(null);

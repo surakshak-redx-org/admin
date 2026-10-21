@@ -1,12 +1,14 @@
 import type { NextRequest } from 'next/server';
+import { z } from 'zod';
 
+import { INCIDENT_STATUSES } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
 import { adminDb } from '@/lib/firebase/admin';
 import { serializeDoc } from '@/lib/firebase/serialize';
 import type { Serialized } from '@/types/api.types';
-import type { IncidentReport, IncidentStatus, SurakshakUser } from '@/types/firestore.types';
+import type { IncidentReport, SurakshakUser } from '@/types/firestore.types';
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -39,10 +41,10 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
   }
 }
 
-interface UpdateIncidentBody {
-  status: IncidentStatus;
-  adminNote?: string;
-}
+/** `adminNote` is optional on purpose: a status-only update must not touch the existing note. */
+const updateIncidentSchema = z
+  .object({ status: z.enum(INCIDENT_STATUSES), adminNote: z.string().optional() })
+  .strict();
 
 export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
   const session = await verifyAdminToken(request);
@@ -50,10 +52,12 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
 
   try {
     const { id } = await context.params;
-    const { status, adminNote } = (await request.json()) as UpdateIncidentBody;
+    const parsed = updateIncidentSchema.safeParse(await request.json());
+    if (!parsed.success) return apiError('Invalid incident update', 400);
 
+    const { status, adminNote } = parsed.data;
     const update: Record<string, unknown> = { status };
-    if (typeof adminNote === 'string') update.adminNote = adminNote;
+    if (adminNote !== undefined) update.adminNote = adminNote;
 
     await adminDb.collection(COLLECTIONS.INCIDENT_REPORTS).doc(id).update(update);
     return apiOk({ id, status });

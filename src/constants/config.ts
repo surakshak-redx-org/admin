@@ -86,3 +86,6 @@ export const AUTH_SIGNED_OUT_MESSAGE = 'signed-out';
 
 /** Error raised instead of sending an API request once this tab has no signed-in user. */
 export const SESSION_ENDED_ERROR = 'Session ended. Please sign in again.';
+
+/** Statuses the PATCH /api/incidents/[id] route accepts. */
+export const INCIDENT_STATUSES = ['submitted', 'under_review', 'resolved', 'rejected'] as const;

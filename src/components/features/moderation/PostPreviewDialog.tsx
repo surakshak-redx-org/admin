@@ -18,6 +18,7 @@ import type { PostType } from '@/types/firestore.types';
 
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
+  incident: 'error',
   location: 'info',
   image: 'default',
   text: 'default',

@@ -50,6 +50,7 @@ const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   location: 'info',
   image: 'default',
   text: 'default',
+  incident: 'error',
 };
 
 function truncate(text: string, length: number): string {

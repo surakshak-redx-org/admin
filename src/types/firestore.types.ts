@@ -20,7 +20,7 @@ export interface SurakshakUser {
 }
 
 // ─── Community ─────────────────────────────────────────────────────
-export type PostType = 'text' | 'location' | 'image' | 'help_request';
+export type PostType = 'text' | 'location' | 'image' | 'help_request' | 'incident';
 
 /** Mirrors Firestore `community/{postId}`. */
 export interface CommunityPost {

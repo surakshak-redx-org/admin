@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
+import { isSupportedImageUrl } from '@/components/features/moderation/PostPreviewDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -28,6 +29,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { Textarea } from '@/components/ui/Textarea';
 import { SEARCH_DEBOUNCE_MS, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { useDebouncedValue, useIncidentsQuery, useUpdateIncidentMutation } from '@/hooks';
+import { isHttpsUrl } from '@/lib/content/content-validation';
 import type { DuplicateCluster } from '@/lib/incidents/duplicate-detection';
 import { detectDuplicateClusters } from '@/lib/incidents/duplicate-detection';
 import type { IncidentWithUser } from '@/services/incidents.service';
@@ -427,7 +429,7 @@ export default function IncidentsPage(): React.JSX.Element {
             </a>
             {viewIncident.photoUrls.length > 0 ? (
               <div className="grid grid-cols-3 gap-2">
-                {viewIncident.photoUrls.map((url): React.JSX.Element => (
+                {viewIncident.photoUrls.filter(isHttpsUrl).map((url): React.JSX.Element => (
                   <a
                     key={url}
                     href={url}
@@ -435,7 +437,13 @@ export default function IncidentsPage(): React.JSX.Element {
                     rel="noreferrer"
                     className="relative block h-24 w-full overflow-hidden rounded"
                   >
-                    <Image src={url} alt="Incident evidence" fill className="object-cover" />
+                    {isSupportedImageUrl(url) ? (
+                      <Image src={url} alt="Incident evidence" fill className="object-cover" />
+                    ) : (
+                      <span className="flex h-full items-center justify-center text-xs text-stone">
+                        Open photo
+                      </span>
+                    )}
                   </a>
                 ))}
               </div>
@@ -462,7 +470,7 @@ export default function IncidentsPage(): React.JSX.Element {
         <UpdateStatusDialog
           incident={editIncident}
           onClose={(): void => setEditIncident(null)}
-          onSave={(status: IncidentStatus, adminNote: string): void => {
+          onSave={(status: IncidentStatus, adminNote: string | undefined): void => {
             updateMutation.mutate(
               { id: editIncident.id, status, adminNote },
               {
@@ -494,7 +502,7 @@ export default function IncidentsPage(): React.JSX.Element {
 interface UpdateStatusDialogProps {
   incident: IncidentWithUser;
   onClose: () => void;
-  onSave: (status: IncidentStatus, adminNote: string) => void;
+  onSave: (status: IncidentStatus, adminNote: string | undefined) => void;
   isSaving: boolean;
 }
 
@@ -509,12 +517,19 @@ function UpdateStatusDialog({
   onSave,
   isSaving,
 }: UpdateStatusDialogProps): React.JSX.Element {
-  const { register, handleSubmit, control } = useForm<UpdateStatusFormValues>({
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { dirtyFields },
+  } = useForm<UpdateStatusFormValues>({
     defaultValues: { status: incident.status, adminNote: incident.adminNote ?? '' },
   });
 
+  // Only send the note when the admin edited it: the prefilled value comes from the list
+  // cache and may be stale, so echoing it back would overwrite a newer note.
   const onSubmit = (values: UpdateStatusFormValues): void =>
-    onSave(values.status, values.adminNote);
+    onSave(values.status, dirtyFields.adminNote ? values.adminNote : undefined);
 
   return (
     <Dialog

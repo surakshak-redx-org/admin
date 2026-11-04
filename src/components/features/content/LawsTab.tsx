@@ -25,17 +25,15 @@ import {
 import { Textarea } from '@/components/ui/Textarea';
 import { SHORT_DESCRIPTION_MAX_LENGTH, TITLE_TRUNCATE_LENGTH } from '@/constants/config';
 import { useDeleteLawMutation, useLawsQuery, useSaveLawMutation } from '@/hooks';
+import { optionalPlainText, plainTextField } from '@/lib/content/content-validation';
 import type { Law } from '@/types/firestore.types';
 
 const lawSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
-  shortDescription: z
-    .string()
-    .min(1, 'Short description is required')
-    .max(SHORT_DESCRIPTION_MAX_LENGTH),
-  fullContent: z.string().min(1, 'Full content is required'),
-  category: z.string().min(1, 'Category is required'),
-  tags: z.string(),
+  title: plainTextField('Title is required'),
+  shortDescription: plainTextField('Short description is required', SHORT_DESCRIPTION_MAX_LENGTH),
+  fullContent: plainTextField('Full content is required'),
+  category: plainTextField('Category is required'),
+  tags: optionalPlainText,
   isPublished: z.boolean(),
 });
 
@@ -217,7 +215,7 @@ function LawFormDialog({
           error={errors.fullContent?.message}
         />
         <Input label="Category" {...register('category')} error={errors.category?.message} />
-        <Input label="Tags (comma-separated)" {...register('tags')} />
+        <Input label="Tags (comma-separated)" {...register('tags')} error={errors.tags?.message} />
         <Controller
           control={control}
           name="isPublished"

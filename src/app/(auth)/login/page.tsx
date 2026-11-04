@@ -27,7 +27,7 @@ function LoginCard(): React.JSX.Element {
 
   useEffect(() => {
     if (!isLoading && isAdmin) {
-      router.push('/');
+      router.replace('/');
     }
   }, [isLoading, isAdmin, router]);
 

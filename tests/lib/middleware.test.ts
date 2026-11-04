@@ -2,7 +2,12 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { forbiddenResponse, unauthorizedResponse, verifyAdminToken } from '@/lib/auth/middleware';
+import {
+  forbiddenResponse,
+  requireSuperAdmin,
+  unauthorizedResponse,
+  verifyAdminToken,
+} from '@/lib/auth/middleware';
 
 import {
   mockAdminAuth,
@@ -112,6 +117,68 @@ describe('Auth Middleware', () => {
       expect(result?.uid).toBe(adminUid);
       expect(result?.admin.email).toBe('superadmin@surakshak.in');
       expect(result?.admin.role).toBe('super_admin');
+    });
+  });
+
+  describe('role handling', () => {
+    function authorizedRequest(): NextRequest {
+      return new NextRequest('http://localhost:3000/api/admins', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+
+    function setAdminDoc(data: Record<string, unknown>): void {
+      mockAdminAuth.verifyIdToken.mockResolvedValue({
+        uid: adminUid,
+        email: 'admin@surakshak.in',
+      } as unknown as DecodedIdToken);
+      setCollectionDocs('admins', [{ id: adminUid, data }]);
+    }
+
+    it('treats a missing or unknown role as a standard admin', async (): Promise<void> => {
+      setAdminDoc({ uid: adminUid });
+      expect((await verifyAdminToken(authorizedRequest()))?.admin.role).toBe('admin');
+
+      setAdminDoc({ uid: adminUid, role: 'owner' });
+      expect((await verifyAdminToken(authorizedRequest()))?.admin.role).toBe('admin');
+    });
+
+    it('takes the uid from the verified token, not from the document', async (): Promise<void> => {
+      setAdminDoc({ uid: 'someone-else', role: 'admin' });
+
+      const result = await verifyAdminToken(authorizedRequest());
+
+      expect(result?.uid).toBe(adminUid);
+      expect(result?.admin.uid).toBe(adminUid);
+    });
+
+    it('requireSuperAdmin returns 401 when the caller is not an admin at all', async (): Promise<void> => {
+      mockAdminAuth.verifyIdToken.mockResolvedValue({
+        uid: adminUid,
+      } as unknown as DecodedIdToken);
+
+      const result = await requireSuperAdmin(authorizedRequest());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(401);
+    });
+
+    it('requireSuperAdmin returns 403 for a standard admin', async (): Promise<void> => {
+      setAdminDoc({ uid: adminUid, role: 'admin' });
+
+      const result = await requireSuperAdmin(authorizedRequest());
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.response.status).toBe(403);
+    });
+
+    it('requireSuperAdmin returns the session for a super_admin', async (): Promise<void> => {
+      setAdminDoc({ uid: adminUid, role: 'super_admin' });
+
+      const result = await requireSuperAdmin(authorizedRequest());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.session.uid).toBe(adminUid);
     });
   });
 

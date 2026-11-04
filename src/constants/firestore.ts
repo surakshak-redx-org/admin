@@ -11,3 +11,9 @@ export const COLLECTIONS = {
   NEWS: 'news',
   ADMINS: 'admins',
 } as const;
+
+/** Values of `admins/{uid}.role` — see CLAUDE.md → Auth. */
+export const ADMIN_ROLES = {
+  ADMIN: 'admin',
+  SUPER_ADMIN: 'super_admin',
+} as const;

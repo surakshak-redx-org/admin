@@ -45,6 +45,13 @@ export interface MockCollectionReference extends MockQuery {
   add: (data: Record<string, unknown>) => Promise<MockDocumentReference>;
 }
 
+export interface MockWriteBatch {
+  set: (ref: MockDocumentReference, data: Record<string, unknown>) => MockWriteBatch;
+  update: (ref: MockDocumentReference, data: Record<string, unknown>) => MockWriteBatch;
+  delete: (ref: MockDocumentReference) => MockWriteBatch;
+  commit: () => Promise<void>;
+}
+
 let autoIdCounter = 0;
 const collectionDocsStore = new Map<string, Map<string, Record<string, unknown>>>();
 const collectionCountStore = new Map<string, number>();
@@ -83,6 +90,18 @@ export function setCollectionDocs(
     col.set(doc.id, { ...doc.data });
   }
   collectionCountStore.set(collection, docs.length);
+}
+
+export interface StoredDoc {
+  readonly id: string;
+  readonly data: Record<string, unknown>;
+}
+
+/** Returns every document currently stored for a collection (empty if none). */
+export function getCollectionDocs(collection: string): StoredDoc[] {
+  const docs = collectionDocsStore.get(collection);
+  if (!docs) return [];
+  return Array.from(docs.entries(), ([id, data]): StoredDoc => ({ id, data: { ...data } }));
 }
 
 export function setCollectionCount(collection: string, count: number): void {
@@ -218,8 +237,34 @@ export function createMockCollection(collectionName: string): MockCollectionRefe
   };
 }
 
+/** Queues writes and applies them in order on commit; the real batch is atomic. */
+function createMockBatch(): MockWriteBatch {
+  const operations: Array<() => Promise<void>> = [];
+  const batch: MockWriteBatch = {
+    set: (ref: MockDocumentReference, data: Record<string, unknown>): MockWriteBatch => {
+      operations.push(() => ref.set(data));
+      return batch;
+    },
+    update: (ref: MockDocumentReference, data: Record<string, unknown>): MockWriteBatch => {
+      operations.push(() => ref.update(data));
+      return batch;
+    },
+    delete: (ref: MockDocumentReference): MockWriteBatch => {
+      operations.push(() => ref.delete());
+      return batch;
+    },
+    commit: async (): Promise<void> => {
+      for (const operation of operations) {
+        await operation();
+      }
+    },
+  };
+  return batch;
+}
+
 export const mockAdminDb = {
   collection: vi.fn((name: string): MockCollectionReference => createMockCollection(name)),
+  batch: vi.fn((): MockWriteBatch => createMockBatch()),
   /** Batched read; a trailing read-options object (e.g. `fieldMask`) is ignored. */
   getAll: vi.fn(
     (

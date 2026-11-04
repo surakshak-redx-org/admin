@@ -10,4 +10,11 @@ export const COLLECTIONS = {
   SAFETY_TIPS: 'safetyTips',
   NEWS: 'news',
   ADMINS: 'admins',
+  AUDIT_LOGS: 'adminAuditLogs',
+} as const;
+
+/** `action` values written to `adminAuditLogs/{logId}` for destructive moderation actions. */
+export const AUDIT_ACTIONS = {
+  DELETE_POST: 'delete_post',
+  REJECT_UNSAFE_AREA: 'reject_unsafe_area',
 } as const;

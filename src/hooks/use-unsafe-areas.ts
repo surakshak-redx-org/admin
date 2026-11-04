@@ -24,6 +24,7 @@ import type { UnsafeAreaStatus } from '@/types/firestore.types';
 export interface UnsafeAreaActionVariables {
   id: string;
   action: 'approve' | 'reject';
+  reason?: string;
 }
 
 export interface UnsafeAreaActionResult {
@@ -107,7 +108,7 @@ export function useUnsafeAreaActionMutation(): UseMutationResult<
       if (!idToken) {
         throw new Error('Authentication required');
       }
-      return executeUnsafeAreaAction(idToken, variables.id, variables.action);
+      return executeUnsafeAreaAction(idToken, variables.id, variables.action, variables.reason);
     },
     onSuccess: (_data: UnsafeAreaActionResult, variables: UnsafeAreaActionVariables): void => {
       toast.success(

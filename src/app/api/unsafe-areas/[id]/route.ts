@@ -5,6 +5,7 @@ import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
 import { adminDb } from '@/lib/firebase/admin';
 import { serializeDoc } from '@/lib/firebase/serialize';
+import { parseReason, REASON_ERROR, rejectUnsafeAreaWithAudit } from '@/lib/moderation/audit';
 import type { Serialized } from '@/types/api.types';
 import type { SurakshakUser, UnsafeArea } from '@/types/firestore.types';
 
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 
 interface UnsafeAreaActionBody {
   action: 'approve' | 'reject';
+  reason?: unknown;
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
@@ -47,7 +49,8 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
 
   try {
     const { id } = await context.params;
-    const { action } = (await request.json()) as UnsafeAreaActionBody;
+    const body = (await request.json()) as UnsafeAreaActionBody;
+    const { action } = body;
     const ref = adminDb.collection(COLLECTIONS.UNSAFE_AREAS).doc(id);
 
     const doc = await ref.get();
@@ -64,7 +67,15 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
       if (data.status === 'rejected') {
         return apiError('Unsafe area is already rejected', 400);
       }
-      await ref.update({ status: 'rejected', pinColor: 'orange' });
+      const reason = parseReason(body);
+      if (!reason) return apiError(REASON_ERROR, 400);
+
+      await rejectUnsafeAreaWithAudit(
+        id,
+        { uid: session.uid, email: session.admin.email },
+        reason,
+        doc.data() ?? {},
+      );
       return apiOk({ id, status: 'rejected' });
     }
 

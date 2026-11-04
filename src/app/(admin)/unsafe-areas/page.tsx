@@ -5,6 +5,7 @@ import { AlertCircle, ExternalLink, MapPin } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 
+import { ReasonDialog } from '@/components/features/moderation/ReasonDialog';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -36,8 +37,9 @@ const COORDINATE_DECIMALS = 4;
 const APPROVE_TITLE = 'Approve this unsafe area report?';
 const APPROVE_DESCRIPTION =
   'It will appear as a verified unsafe area (red pin) on the Surakshak map.';
-const REJECT_TITLE = 'Reject and remove this report?';
-const REJECT_DESCRIPTION = 'This cannot be undone.';
+const REJECT_TITLE = 'Reject this report?';
+const REJECT_DESCRIPTION =
+  'The report is kept and marked rejected, with your name, the time and your reason.';
 
 const FILTER_ITEMS = [
   { value: 'all', label: 'All' },
@@ -217,20 +219,15 @@ function UnsafeAreasPageInner(): React.JSX.Element {
       ) : null}
 
       {rejectArea ? (
-        <AlertDialog
-          open
-          onOpenChange={(open: boolean): void => {
-            if (!open) {
-              setRejectArea(null);
-            }
-          }}
+        <ReasonDialog
+          onClose={(): void => setRejectArea(null)}
           title={REJECT_TITLE}
           description={REJECT_DESCRIPTION}
           confirmLabel="Reject"
           isLoading={actionMutation.isPending}
-          onConfirm={(): void => {
+          onConfirm={(reason: string): void => {
             actionMutation.mutate(
-              { id: rejectArea.id, action: 'reject' },
+              { id: rejectArea.id, action: 'reject', reason },
               {
                 onSuccess: (): void => {
                   setRejectArea(null);

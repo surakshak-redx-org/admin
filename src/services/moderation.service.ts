@@ -11,6 +11,7 @@ export interface GetModerationParams {
 
 export interface ModerationActionPayload {
   action: 'restore' | 'delete';
+  reason?: string;
 }
 
 /**
@@ -53,19 +54,21 @@ export async function getModerationPost(idToken: string, id: string): Promise<Mo
  * @param idToken Firebase ID token for authentication
  * @param id Post document ID
  * @param action Action to perform ('restore' or 'delete')
+ * @param reason Why the post is deleted; required by the API for 'delete'
  * @returns Action result confirmation
  */
 export async function executeModerationAction(
   idToken: string,
   id: string,
   action: 'restore' | 'delete',
+  reason?: string,
 ): Promise<{ id: string; restored?: boolean; deleted?: boolean }> {
   return apiFetch<{ id: string; restored?: boolean; deleted?: boolean }>(
     `/api/moderation/${encodeURIComponent(id)}`,
     idToken,
     {
       method: 'PATCH',
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, reason }),
     },
   );
 }

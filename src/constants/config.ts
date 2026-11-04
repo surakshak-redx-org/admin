@@ -54,6 +54,9 @@ export const NEW_INCIDENT_TOAST_DURATION_MS = 1000 * 10;
 /** Max new incidents returned by one poll; any older ones are summarised, not listed. */
 export const NEW_INCIDENT_POLL_LIMIT = 10;
 
+/** Max length of the reason an admin must give when deleting a post or rejecting an area. */
+export const MODERATION_REASON_MAX_LENGTH = 500;
+
 /** Sort orders the /api/community-posts list accepts via `?sort=`. */
 export const COMMUNITY_POST_SORTS = ['newest', 'oldest', 'most-reported'] as const;
 

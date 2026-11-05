@@ -107,6 +107,7 @@ export default function UsersPage(): React.JSX.Element {
     toast.success(variables.action === 'suspend' ? 'User suspended' : 'User unsuspended');
     setSuspendUser(null);
     queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined);
+    queryClient.invalidateQueries({ queryKey: ['user', variables.uid] }).catch(() => undefined);
   },
   onError: (_error, variables) =>
     toast.error(

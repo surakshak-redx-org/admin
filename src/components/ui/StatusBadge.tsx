@@ -5,18 +5,26 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   submitted: 'info',
   under_review: 'warning',
   resolved: 'success',
+  open: 'warning',
+  in_progress: 'info',
+  closed: 'default',
   pending: 'warning',
   approved: 'success',
   hidden: 'error',
+  rejected: 'error',
 };
 
 const STATUS_LABEL: Record<string, string> = {
   submitted: 'Submitted',
   under_review: 'Under Review',
   resolved: 'Resolved',
+  open: 'Open',
+  in_progress: 'In Progress',
+  closed: 'Closed',
   pending: 'Pending',
   approved: 'Approved',
   hidden: 'Hidden',
+  rejected: 'Rejected',
 };
 
 export interface StatusBadgeProps {

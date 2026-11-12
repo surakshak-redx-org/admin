@@ -1,17 +1,24 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, type Auth } from 'firebase/auth';
 
-import { ENV } from '@/config/env';
+import { getEnv } from '@/config/env';
 
-const firebaseConfig = {
-  apiKey: ENV.FIREBASE_API_KEY,
-  authDomain: ENV.FIREBASE_AUTH_DOMAIN,
-  projectId: ENV.FIREBASE_PROJECT_ID,
-  storageBucket: ENV.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: ENV.FIREBASE_MESSAGING_SENDER_ID,
-  appId: ENV.FIREBASE_APP_ID,
-};
+let clientAuth: Auth | undefined;
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+export function getClientAuth(): Auth {
+  if (clientAuth) return clientAuth;
 
-export const clientAuth = getAuth(app);
+  const env = getEnv();
+  const firebaseConfig = {
+    apiKey: env.FIREBASE_API_KEY,
+    authDomain: env.FIREBASE_AUTH_DOMAIN,
+    projectId: env.FIREBASE_PROJECT_ID,
+    storageBucket: env.FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
+    appId: env.FIREBASE_APP_ID,
+  };
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+  clientAuth = getAuth(app);
+  return clientAuth;
+}

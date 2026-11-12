@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 
+import { USER_ACTIONS, type UserAction } from '@/constants/config';
 import { COLLECTIONS } from '@/constants/firestore';
 import { apiError, apiOk } from '@/lib/api/response';
 import { verifyAdminToken } from '@/lib/auth/middleware';
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 }
 
 interface UserActionBody {
-  action: 'suspend' | 'unsuspend';
+  action: UserAction;
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext): Promise<Response> {
@@ -66,15 +67,16 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     const { uid } = await context.params;
     const { action } = (await request.json()) as UserActionBody;
 
-    if (action !== 'suspend' && action !== 'unsuspend') {
+    if (!USER_ACTIONS.includes(action)) {
       return apiError('Invalid action', 400);
     }
 
-    const isSuspended = action === 'suspend';
+    const ref = adminDb.collection(COLLECTIONS.USERS).doc(uid);
+    const doc = await ref.get();
+    if (!doc.exists) return apiError('User not found', 404);
 
-    await adminDb.collection(COLLECTIONS.USERS).doc(uid).update({
-      isSuspended,
-    });
+    const isSuspended = action === 'suspend';
+    await ref.update({ isSuspended });
 
     return apiOk({
       id: uid,
@@ -82,9 +84,6 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     });
   } catch (error) {
     console.error('PATCH /api/users/[uid] failed:', error);
-    return apiError(
-      'Failed to update user suspension status',
-      500,
-    );
+    return apiError('Failed to update user', 500);
   }
 }

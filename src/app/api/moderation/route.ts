@@ -10,10 +10,14 @@ import type { CommunityPost } from '@/types/firestore.types';
 
 const MODERATION_LIST_FIELDS = [
   'authorName',
+  'authorPhotoUrl',
   'content',
   'type',
   'isAnonymous',
+  'imageUrl',
+  'locationUrl',
   'city',
+  'state',
   'reportCount',
   'createdAt',
 ] as const;

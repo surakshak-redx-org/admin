@@ -20,7 +20,7 @@ export interface SurakshakUser {
 }
 
 // ─── Community ─────────────────────────────────────────────────────
-export type PostType = 'text' | 'location' | 'image' | 'help_request';
+export type PostType = 'text' | 'location' | 'image' | 'help_request' | 'incident';
 
 /** Mirrors Firestore `community/{postId}`. */
 export interface CommunityPost {
@@ -65,7 +65,7 @@ export interface UnsafeArea {
 }
 
 // ─── Incidents ──────────────────────────────────────────────────────
-export type IncidentStatus = 'submitted' | 'under_review' | 'resolved';
+export type IncidentStatus = 'submitted' | 'under_review' | 'resolved' | 'rejected';
 
 /**
  * Incident category, used by the admin dashboard's Incidents search &
@@ -95,6 +95,29 @@ export interface IncidentReport {
    */
   category?: IncidentCategory;
   adminNote?: string;
+}
+
+export type BugReportCategory = 'crash' | 'ui' | 'login' | 'performance' | 'other';
+export type BugReportSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type BugReportStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+/** Mirrors bugReports/{reportId}; user identity comes only from Firebase Auth. */
+export interface BugReport {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  category: BugReportCategory;
+  severity: BugReportSeverity;
+  status: BugReportStatus;
+  platform: string;
+  appVersion: string;
+  stepsToReproduce: string;
+  expectedBehavior: string;
+  actualBehavior: string;
+  adminNotes: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 // ─── Content ────────────────────────────────────────────────────────

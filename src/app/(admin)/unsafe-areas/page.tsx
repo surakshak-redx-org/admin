@@ -1,15 +1,14 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { ExternalLink, MapPin } from 'lucide-react';
+import { AlertCircle, ExternalLink, MapPin } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
-import toast from 'react-hot-toast';
 
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -22,18 +21,23 @@ import {
   TableRow,
 } from '@/components/ui/Table';
 import { Tabs } from '@/components/ui/Tabs';
-import { QUERY_ALWAYS_STALE_TIME_MS } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { UnsafeArea, UnsafeAreaStatus } from '@/types/firestore.types';
+import { useUnsafeAreaActionMutation, useUnsafeAreasQuery } from '@/hooks';
+import type { UnsafeAreaWithId } from '@/services/unsafe-areas.service';
+import type { UnsafeAreaStatus } from '@/types/firestore.types';
 
-type ClientUnsafeArea = Serialized<UnsafeArea> & {
-  id: string;
-  /** Resolved by the list API; `null` when the reporter has no profile name. */
-  reporterName?: string | null;
-};
 type FilterValue = UnsafeAreaStatus | 'all';
+
+const PAGE_TITLE = 'Unsafe Areas';
+const LOAD_ERROR_MESSAGE = 'Could not load unsafe areas.';
+const EMPTY_TITLE = 'No unsafe areas';
+const EMPTY_SUBTITLE = 'Nothing matches this filter.';
+const UNKNOWN_REPORTER_LABEL = 'Unknown user';
+const COORDINATE_DECIMALS = 4;
+const APPROVE_TITLE = 'Approve this unsafe area report?';
+const APPROVE_DESCRIPTION =
+  'It will appear as a verified unsafe area (red pin) on the Surakshak map.';
+const REJECT_TITLE = 'Reject and remove this report?';
+const REJECT_DESCRIPTION = 'This cannot be undone.';
 
 const FILTER_ITEMS = [
   { value: 'all', label: 'All' },
@@ -55,78 +59,67 @@ export default function UnsafeAreasPage(): React.JSX.Element {
 }
 
 function UnsafeAreasPageInner(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<FilterValue>(
     (searchParams.get('filter') as FilterValue | null) ?? 'all',
   );
-  const [approveArea, setApproveArea] = useState<ClientUnsafeArea | null>(null);
-  const [rejectArea, setRejectArea] = useState<ClientUnsafeArea | null>(null);
+  const [approveArea, setApproveArea] = useState<UnsafeAreaWithId | null>(null);
+  const [rejectArea, setRejectArea] = useState<UnsafeAreaWithId | null>(null);
 
-  const areasQuery = useQuery({
-    queryKey: ['unsafe-areas', filter],
-    queryFn: () =>
-      apiFetch<ClientUnsafeArea[]>(`/api/unsafe-areas?status=${filter}`, idToken ?? ''),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['unsafe-areas'] }).catch(() => undefined);
-  };
-
-  const actionMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'approve' | 'reject' }) =>
-      apiFetch(`/api/unsafe-areas/${id}`, idToken ?? '', {
-        method: 'PATCH',
-        body: JSON.stringify({ action }),
-      }),
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.action === 'approve' ? 'Area approved and visible on map' : 'Report rejected',
-      );
-      setApproveArea(null);
-      setRejectArea(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to update unsafe area'),
-  });
+  const areasQuery = useUnsafeAreasQuery(filter);
+  const actionMutation = useUnsafeAreaActionMutation();
 
   const areas = areasQuery.data ?? [];
 
-  return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold text-deep-ink">Unsafe Areas</h1>
-      <Tabs
-        items={FILTER_ITEMS}
-        value={filter}
-        onValueChange={(v) => setFilter(v as FilterValue)}
-      />
+  const handleRetry = (): void => {
+    void areasQuery.refetch();
+  };
 
-      {areasQuery.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : areas.length === 0 ? (
-        <EmptyState icon={MapPin} title="No unsafe areas" subtitle="Nothing matches this filter." />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Title</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Location</TableHead>
-              <TableHead>Reported By</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Votes</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {areas.map((area) => (
+  let content: React.JSX.Element;
+
+  if (areasQuery.isLoading) {
+    content = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (areasQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
+            <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          </div>
+          <Button variant="outline" isLoading={areasQuery.isFetching} onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (areas.length === 0) {
+    content = <EmptyState icon={MapPin} title={EMPTY_TITLE} subtitle={EMPTY_SUBTITLE} />;
+  } else {
+    content = (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Title</TableHead>
+            <TableHead>Category</TableHead>
+            <TableHead>Location</TableHead>
+            <TableHead>Reported By</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Votes</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {areas.map((area: UnsafeAreaWithId): React.JSX.Element => {
+            const canApprove = area.status === 'pending';
+            const canReject = area.status !== 'rejected';
+
+            return (
               <TableRow key={area.id}>
                 <TableCell>{area.title}</TableCell>
                 <TableCell>
@@ -139,12 +132,15 @@ function UnsafeAreasPageInner(): React.JSX.Element {
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-shakti-purple hover:underline"
                   >
-                    {area.latitude.toFixed(4)}, {area.longitude.toFixed(4)}
+                    {area.latitude.toFixed(COORDINATE_DECIMALS)},{' '}
+                    {area.longitude.toFixed(COORDINATE_DECIMALS)}
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </TableCell>
                 <TableCell title={area.reportedBy}>
-                  {area.reporterName ?? <span className="text-stone">Unknown user</span>}
+                  {area.reporterName ?? (
+                    <span className="text-stone">{UNKNOWN_REPORTER_LABEL}</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {formatDistanceToNow(new Date(area.createdAt), { addSuffix: true })}
@@ -155,50 +151,93 @@ function UnsafeAreasPageInner(): React.JSX.Element {
                 <TableCell>{area.upvotes - area.downvotes}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    {area.status === 'pending' ? (
-                      <>
-                        <Button size="sm" variant="default" onClick={() => setApproveArea(area)}>
-                          Approve
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => setRejectArea(area)}>
-                          Reject
-                        </Button>
-                      </>
-                    ) : (
-                      <Button size="sm" variant="destructive" onClick={() => setRejectArea(area)}>
+                    {canApprove ? (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={(): void => setApproveArea(area)}
+                      >
+                        Approve
+                      </Button>
+                    ) : null}
+                    {canReject ? (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={(): void => setRejectArea(area)}
+                      >
                         Reject
                       </Button>
-                    )}
+                    ) : null}
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+            );
+          })}
+        </TableBody>
+      </Table>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
+      <h1 className="text-2xl font-semibold text-deep-ink">{PAGE_TITLE}</h1>
+      <Tabs
+        items={FILTER_ITEMS}
+        value={filter}
+        onValueChange={(value: string): void => setFilter(value as FilterValue)}
+      />
+
+      {content}
 
       {approveArea ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setApproveArea(null)}
-          title="Approve this unsafe area report?"
-          description="It will appear as a verified unsafe area (red pin) on the Surakshak map."
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setApproveArea(null);
+            }
+          }}
+          title={APPROVE_TITLE}
+          description={APPROVE_DESCRIPTION}
           confirmLabel="Approve"
           confirmVariant="default"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: approveArea.id, action: 'approve' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: approveArea.id, action: 'approve' },
+              {
+                onSuccess: (): void => {
+                  setApproveArea(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
 
       {rejectArea ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setRejectArea(null)}
-          title="Reject and remove this report?"
-          description="This cannot be undone."
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setRejectArea(null);
+            }
+          }}
+          title={REJECT_TITLE}
+          description={REJECT_DESCRIPTION}
           confirmLabel="Reject"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: rejectArea.id, action: 'reject' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: rejectArea.id, action: 'reject' },
+              {
+                onSuccess: (): void => {
+                  setRejectArea(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
     </div>

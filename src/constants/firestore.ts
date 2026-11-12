@@ -4,6 +4,7 @@ export const COLLECTIONS = {
   COMMUNITY: 'community',
   UNSAFE_AREAS: 'unsafeAreas',
   INCIDENT_REPORTS: 'incidentReports',
+  BUG_REPORTS: 'bugReports',
   LAWS: 'laws',
   FAQS: 'faqs',
   SAFETY_TIPS: 'safetyTips',

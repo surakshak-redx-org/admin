@@ -1,15 +1,19 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import Image from 'next/image';
 import { useState } from 'react';
-import toast from 'react-hot-toast';
 
+import {
+  isSupportedImageUrl,
+  PostPreviewDialog,
+} from '@/components/features/moderation/PostPreviewDialog';
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Badge } from '@/components/ui/Badge';
 import type { BadgeVariant } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import {
@@ -23,73 +27,159 @@ import {
 import {
   COMMUNITY_REPORT_HIDE_THRESHOLD,
   CONTENT_PREVIEW_LENGTH,
-  QUERY_ALWAYS_STALE_TIME_MS,
   REPORT_COUNT_DANGER_THRESHOLD,
 } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { CommunityPost, PostType } from '@/types/firestore.types';
+import { useModerationActionMutation, useModerationPostsQuery } from '@/hooks';
+import type { ModerationPost } from '@/services/moderation.service';
+import type { PostType } from '@/types/firestore.types';
 
-type ClientPost = Serialized<CommunityPost> & { id: string };
+const PAGE_TITLE = 'Reported Posts';
+const ELLIPSIS = '\u2026';
+const ANONYMOUS_LABEL = 'Anonymous';
+const LOAD_ERROR_MESSAGE = 'Could not load reported posts.';
+const EMPTY_TITLE = 'All clear: no posts need review';
+const EMPTY_SUBTITLE = 'Posts appear here once they are hidden by user reports.';
+const RESTORE_TITLE = 'Restore this post?';
+const RESTORE_DESCRIPTION = 'This will make the post visible again and reset report count.';
+const DELETE_TITLE = 'Permanently delete this post?';
+const DELETE_DESCRIPTION =
+  'The post and its report history are removed for everyone. This cannot be undone.';
 
 const TYPE_VARIANT: Record<PostType, BadgeVariant> = {
   help_request: 'error',
   location: 'info',
   image: 'default',
   text: 'default',
+  incident: 'error',
 };
 
 function truncate(text: string, length: number): string {
-  return text.length > length ? `${text.slice(0, length)}…` : text;
+  return text.length > length ? `${text.slice(0, length)}${ELLIPSIS}` : text;
 }
 
 export default function ModerationPage(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
-  const [restorePost, setRestorePost] = useState<ClientPost | null>(null);
-  const [deletePost, setDeletePost] = useState<ClientPost | null>(null);
+  const [previewPost, setPreviewPost] = useState<ModerationPost | null>(null);
+  const [restorePost, setRestorePost] = useState<ModerationPost | null>(null);
+  const [deletePost, setDeletePost] = useState<ModerationPost | null>(null);
 
-  const postsQuery = useQuery({
-    queryKey: ['moderation'],
-    queryFn: () => apiFetch<ClientPost[]>('/api/moderation', idToken ?? ''),
-    enabled: idToken !== null,
-    staleTime: QUERY_ALWAYS_STALE_TIME_MS,
-    refetchOnWindowFocus: true,
-  });
-
-  const invalidate = (): void => {
-    queryClient.invalidateQueries({ queryKey: ['moderation'] }).catch(() => undefined);
-
-    queryClient.invalidateQueries({ queryKey: ['community-posts'] }).catch(() => undefined);
-  };
-
-  const actionMutation = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'restore' | 'delete' }) =>
-      apiFetch(`/api/moderation/${id}`, idToken ?? '', {
-        method: 'PATCH',
-        body: JSON.stringify({ action }),
-      }),
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.action === 'restore'
-          ? 'Post restored and visible again'
-          : 'Post permanently deleted',
-      );
-      setRestorePost(null);
-      setDeletePost(null);
-      invalidate();
-    },
-    onError: () => toast.error('Failed to update post'),
-  });
+  const postsQuery = useModerationPostsQuery();
+  const actionMutation = useModerationActionMutation();
 
   const posts = postsQuery.data ?? [];
+
+  const handleRetry = (): void => {
+    void postsQuery.refetch();
+  };
+
+  let content: React.JSX.Element;
+
+  if (postsQuery.isLoading) {
+    content = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (postsQuery.isError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0 text-error-red" aria-hidden="true" />
+            <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          </div>
+          <Button variant="outline" isLoading={postsQuery.isFetching} onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (posts.length === 0) {
+    content = (
+      <EmptyState
+        icon={CheckCircle2}
+        iconClassName="h-10 w-10 text-forest-green"
+        title={EMPTY_TITLE}
+        subtitle={EMPTY_SUBTITLE}
+      />
+    );
+  } else {
+    content = (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Content Preview</TableHead>
+            <TableHead>Author</TableHead>
+            <TableHead>City</TableHead>
+            <TableHead>Reports</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {posts.map((post: ModerationPost): React.JSX.Element => (
+            <TableRow key={post.id}>
+              <TableCell className="max-w-xs">
+                <div className="flex items-center gap-3">
+                  {isSupportedImageUrl(post.imageUrl) ? (
+                    <button
+                      type="button"
+                      aria-label="View post details"
+                      onClick={(): void => setPreviewPost(post)}
+                      className="relative h-12 w-12 shrink-0 overflow-hidden rounded-md bg-gray-100"
+                    >
+                      <Image
+                        src={post.imageUrl}
+                        alt="Post thumbnail"
+                        fill
+                        sizes="48px"
+                        className="object-cover"
+                      />
+                    </button>
+                  ) : null}
+                  <span>{truncate(post.content, CONTENT_PREVIEW_LENGTH)}</span>
+                </div>
+              </TableCell>
+              <TableCell>{post.isAnonymous ? ANONYMOUS_LABEL : post.authorName}</TableCell>
+              <TableCell>{post.city}</TableCell>
+              <TableCell>
+                <Badge
+                  variant={post.reportCount >= REPORT_COUNT_DANGER_THRESHOLD ? 'error' : 'default'}
+                >
+                  {post.reportCount}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant={TYPE_VARIANT[post.type]}>{post.type}</Badge>
+              </TableCell>
+              <TableCell>
+                {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={(): void => setPreviewPost(post)}>
+                    View Details
+                  </Button>
+                  <Button size="sm" onClick={(): void => setRestorePost(post)}>
+                    Restore
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={(): void => setDeletePost(post)}>
+                    Delete
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       {/* What this queue is was never stated anywhere on the page (BUG-009). */}
       <div>
-        <h1 className="text-2xl font-semibold text-deep-ink">Reported Posts</h1>
+        <h1 className="text-2xl font-semibold text-deep-ink">{PAGE_TITLE}</h1>
         <p className="mt-1 max-w-3xl text-sm text-stone">
           Community posts are hidden from the app automatically once{' '}
           {COMMUNITY_REPORT_HIDE_THRESHOLD} users report them. Review each one:{' '}
@@ -98,98 +188,72 @@ export default function ModerationPage(): React.JSX.Element {
         </p>
       </div>
 
-      {postsQuery.isLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : postsQuery.isError ? (
-        <EmptyState
-          icon={AlertCircle}
-          iconClassName="h-10 w-10 text-error-red"
-          title="Couldn't load reported posts"
-          subtitle="Refresh the page to try again."
+      {content}
+
+      {previewPost ? (
+        <PostPreviewDialog
+          post={previewPost}
+          isBusy={actionMutation.isPending}
+          onClose={(): void => setPreviewPost(null)}
+          onRestore={(post: ModerationPost): void => {
+            setPreviewPost(null);
+            setRestorePost(post);
+          }}
+          onDelete={(post: ModerationPost): void => {
+            setPreviewPost(null);
+            setDeletePost(post);
+          }}
         />
-      ) : posts.length === 0 ? (
-        <EmptyState
-          icon={CheckCircle2}
-          iconClassName="h-10 w-10 text-forest-green"
-          title="All clear — no posts need review"
-          subtitle="Posts appear here once they are hidden by user reports."
-        />
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Content Preview</TableHead>
-              <TableHead>Author</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead>Reports</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {posts.map((post) => (
-              <TableRow key={post.id}>
-                <TableCell className="max-w-xs">
-                  {truncate(post.content, CONTENT_PREVIEW_LENGTH)}
-                </TableCell>
-                <TableCell>{post.isAnonymous ? 'Anonymous' : post.authorName}</TableCell>
-                <TableCell>{post.city}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={
-                      post.reportCount >= REPORT_COUNT_DANGER_THRESHOLD ? 'error' : 'default'
-                    }
-                  >
-                    {post.reportCount}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={TYPE_VARIANT[post.type]}>{post.type}</Badge>
-                </TableCell>
-                <TableCell>
-                  {formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setRestorePost(post)}>
-                      Restore
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => setDeletePost(post)}>
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      ) : null}
 
       {restorePost ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setRestorePost(null)}
-          title="Restore this post?"
-          description="This will make the post visible again and reset report count."
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setRestorePost(null);
+            }
+          }}
+          title={RESTORE_TITLE}
+          description={RESTORE_DESCRIPTION}
           confirmLabel="Restore"
           confirmVariant="default"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: restorePost.id, action: 'restore' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: restorePost.id, action: 'restore' },
+              {
+                onSuccess: (): void => {
+                  setRestorePost(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
 
       {deletePost ? (
         <AlertDialog
           open
-          onOpenChange={(open) => !open && setDeletePost(null)}
-          title="Permanently delete this post?"
-          description="The post and its report history are removed for everyone. This cannot be undone."
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setDeletePost(null);
+            }
+          }}
+          title={DELETE_TITLE}
+          description={DELETE_DESCRIPTION}
           confirmLabel="Delete"
           isLoading={actionMutation.isPending}
-          onConfirm={() => actionMutation.mutate({ id: deletePost.id, action: 'delete' })}
+          onConfirm={(): void => {
+            actionMutation.mutate(
+              { id: deletePost.id, action: 'delete' },
+              {
+                onSuccess: (): void => {
+                  setDeletePost(null);
+                },
+              },
+            );
+          }}
         />
       ) : null}
     </div>

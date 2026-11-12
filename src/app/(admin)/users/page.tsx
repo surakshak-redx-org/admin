@@ -1,14 +1,13 @@
 'use client';
 
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { useEffect, useState } from 'react';
-import toast from 'react-hot-toast';
+import { useState } from 'react';
 
 import { AlertDialog } from '@/components/ui/AlertDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Card, CardContent } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
@@ -21,179 +20,227 @@ import {
   TableRow,
 } from '@/components/ui/Table';
 import { SEARCH_DEBOUNCE_MS } from '@/constants/config';
-import { apiFetch } from '@/lib/api/client';
-import { useAuth } from '@/lib/auth/session';
-import type { Serialized } from '@/types/api.types';
-import type { SurakshakUser } from '@/types/firestore.types';
+import {
+  useDebouncedValue,
+  useSuspendUserMutation,
+  useUnsuspendUserMutation,
+  useUserDetailQuery,
+  useUsersListQuery,
+} from '@/hooks';
+import type { UsersListResponse } from '@/services/users.service';
 
-type ClientUser = Serialized<Omit<SurakshakUser, 'phone'>> & { id: string };
+type ClientUser = UsersListResponse['users'][number];
 
-interface UsersResponse {
-  users: ClientUser[];
-  nextCursor: string | null;
-}
-
-interface UserDetail {
-  user: ClientUser;
-  postCount: number;
-  incidentCount: number;
-}
-
-function useDebouncedValue(value: string, delayMs: number): string {
-  const [debounced, setDebounced] = useState(value);
-  useEffect((): (() => void) => {
-    const timer = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(timer);
-  }, [value, delayMs]);
-  return debounced;
-}
+const SEARCH_PLACEHOLDER = 'Search by name or city...';
+const LOAD_ERROR_MESSAGE = 'Could not load users.';
+const LOAD_MORE_ERROR_MESSAGE = 'Could not load more users.';
+const EMPTY_MESSAGE = 'No users yet.';
+const EMPTY_SEARCH_MESSAGE = 'No users match your search.';
 
 export default function UsersPage(): React.JSX.Element {
-  const { idToken } = useAuth();
-  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [suspendUser, setSuspendUser] = useState<ClientUser | null>(null);
   const [suspensionAction, setSuspensionAction] = useState<'suspend' | 'unsuspend'>('suspend');
 
-  // One query per page of results. `pageCursors` grows via "Load more";
-  // it resets to a single first page whenever the (debounced) search term
-  // changes — done here, during render, rather than in an effect, so a
-  // search-term change and the page reset land in the same render pass.
-  const [pageCursors, setPageCursors] = useState<(string | null)[]>([null]);
-  const [committedSearch, setCommittedSearch] = useState(debouncedSearch);
-  if (debouncedSearch !== committedSearch) {
-    setCommittedSearch(debouncedSearch);
-    setPageCursors([null]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [prevSearch, setPrevSearch] = useState(debouncedSearch);
+  const [prevData, setPrevData] = useState<UsersListResponse | undefined>(undefined);
+  const [accumulatedUsers, setAccumulatedUsers] = useState<ClientUser[]>([]);
+
+  if (debouncedSearch !== prevSearch) {
+    setPrevSearch(debouncedSearch);
+    setCursor(null);
   }
 
-  const pageQueries = useQueries({
-    queries: pageCursors.map((cursor) => ({
-      queryKey: ['users', committedSearch, cursor],
-      queryFn: (): Promise<UsersResponse> => {
-        const params = new URLSearchParams();
-        if (committedSearch) params.set('search', committedSearch);
-        if (cursor) params.set('cursor', cursor);
-        return apiFetch<UsersResponse>(`/api/users?${params.toString()}`, idToken ?? '');
-      },
-      enabled: idToken !== null,
-    })),
-  });
+  const usersQuery = useUsersListQuery(debouncedSearch, cursor, undefined, 0);
+  const detailQuery = useUserDetailQuery(viewUserId);
+  const suspendMutation = useSuspendUserMutation();
+  const unsuspendMutation = useUnsuspendUserMutation();
 
-  const accumulated = pageQueries.flatMap((page) => page.data?.users ?? []);
-  const isInitialLoading = pageQueries[0]?.isLoading ?? false;
-  const isFetchingMore =
-    pageQueries.length > 1 && (pageQueries[pageQueries.length - 1]?.isFetching ?? false);
-  const nextCursor = pageQueries[pageQueries.length - 1]?.data?.nextCursor ?? null;
+  if (usersQuery.data && usersQuery.data !== prevData) {
+    setPrevData(usersQuery.data);
+    if (cursor === null) {
+      setAccumulatedUsers(usersQuery.data.users);
+    } else {
+      const existingIds = new Set(accumulatedUsers.map((u: ClientUser): string => u.id));
+      const newUsers = usersQuery.data.users.filter(
+        (u: ClientUser): boolean => !existingIds.has(u.id),
+      );
+      setAccumulatedUsers([...accumulatedUsers, ...newUsers]);
+    }
+  }
+
+  const isInitialLoading = usersQuery.isLoading && cursor === null;
+  const isFetchingMore = usersQuery.isFetching && cursor !== null;
+  const isInitialError = usersQuery.isError && cursor === null;
+  const isLoadMoreError = usersQuery.isError && cursor !== null;
+  const nextCursor = usersQuery.data?.nextCursor ?? null;
+  const hasSearch = debouncedSearch.trim() !== '';
 
   const handleLoadMore = (): void => {
-    if (nextCursor) setPageCursors((prev) => [...prev, nextCursor]);
+    if (nextCursor) {
+      setCursor(nextCursor);
+    }
   };
 
-  const detailQuery = useQuery({
-    queryKey: ['user', viewUserId],
-    queryFn: () => apiFetch<UserDetail>(`/api/users/${viewUserId ?? ''}`, idToken ?? ''),
-    enabled: idToken !== null && viewUserId !== null,
-  });
+  const handleRetry = (): void => {
+    void usersQuery.refetch();
+  };
 
- const suspendMutation = useMutation({
-  mutationFn: ({ uid, action }: { uid: string; action: 'suspend' | 'unsuspend' }) =>
-    apiFetch(`/api/users/${uid}`, idToken ?? '', {
-      method: 'PATCH',
-      body: JSON.stringify({ action }),
-    }),
-  onSuccess: (_data, variables) => {
-    toast.success(variables.action === 'suspend' ? 'User suspended' : 'User unsuspended');
-    setSuspendUser(null);
-    queryClient.invalidateQueries({ queryKey: ['users'] }).catch(() => undefined);
-    queryClient.invalidateQueries({ queryKey: ['user', variables.uid] }).catch(() => undefined);
-  },
-  onError: (_error, variables) =>
-    toast.error(
-      variables.action === 'suspend'
-        ? 'Failed to suspend user'
-        : 'Failed to unsuspend user',
-    ),
-});
+  const handleSuspendAction = (user: ClientUser): void => {
+    setSuspendUser(user);
+    setSuspensionAction(user.isSuspended ? 'unsuspend' : 'suspend');
+  };
+
+  const handleConfirmUserAction = (): void => {
+    if (!suspendUser) {
+      return;
+    }
+
+    const nextStatus = suspensionAction === 'suspend';
+    const mutationCallback = (): void => {
+      setAccumulatedUsers((prevUsers: ClientUser[]): ClientUser[] =>
+        prevUsers.map((user: ClientUser): ClientUser =>
+          user.id === suspendUser.id ? { ...user, isSuspended: nextStatus } : user,
+        ),
+      );
+      setSuspendUser(null);
+    };
+
+    if (suspensionAction === 'suspend') {
+      suspendMutation.mutate(suspendUser.id, { onSuccess: mutationCallback });
+      return;
+    }
+
+    unsuspendMutation.mutate(suspendUser.id, { onSuccess: mutationCallback });
+  };
+
+  let content: React.JSX.Element;
+
+  if (isInitialLoading) {
+    content = (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  } else if (isInitialError) {
+    content = (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-error-red">{LOAD_ERROR_MESSAGE}</p>
+          <Button variant="outline" onClick={handleRetry}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  } else if (accumulatedUsers.length === 0) {
+    content = (
+      <Card>
+        <CardContent>
+          <p className="text-sm text-stone">{hasSearch ? EMPTY_SEARCH_MESSAGE : EMPTY_MESSAGE}</p>
+        </CardContent>
+      </Card>
+    );
+  } else {
+    content = (
+      <>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>City</TableHead>
+              <TableHead>Language</TableHead>
+              <TableHead>Joined</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {accumulatedUsers.map((user: ClientUser): React.JSX.Element => (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <Avatar name={user.name} src={user.profilePhotoUrl} size="sm" />
+                    <span>{user.name}</span>
+                    {user.isSuspended ? <Badge variant="error">Suspended</Badge> : null}
+                  </div>
+                </TableCell>
+                <TableCell>{user.city}</TableCell>
+                <TableCell>
+                  <Badge>{user.language.toUpperCase()}</Badge>
+                </TableCell>
+                <TableCell>
+                  {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(): void => setViewUserId(user.id)}
+                    >
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={user.isSuspended ? 'default' : 'destructive'}
+                      onClick={(): void => handleSuspendAction(user)}
+                    >
+                      {user.isSuspended ? 'Unsuspend' : 'Suspend'}
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        {isLoadMoreError ? (
+          <div className="flex items-center justify-center gap-4">
+            <p className="text-sm text-error-red">{LOAD_MORE_ERROR_MESSAGE}</p>
+            <Button variant="outline" onClick={handleRetry}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
+
+        {nextCursor && !isLoadMoreError ? (
+          <div className="flex justify-center">
+            <Button variant="outline" isLoading={isFetchingMore} onClick={handleLoadMore}>
+              Load more
+            </Button>
+          </div>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold text-deep-ink">Users</h1>
       <Input
-        placeholder="Search by name or city…"
+        placeholder={SEARCH_PLACEHOLDER}
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>): void =>
+          setSearch(event.target.value)
+        }
         className="max-w-sm"
       />
 
-      {isInitialLoading ? (
-        <div className="flex justify-center py-16">
-          <Spinner size="lg" />
-        </div>
-      ) : (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>City</TableHead>
-                <TableHead>Language</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {accumulated.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Avatar name={user.name} src={user.profilePhotoUrl} size="sm" />
-                      <span>{user.name}</span>
-                      {user.isSuspended ? <Badge variant="error">Suspended</Badge> : null}
-                    </div>
-                  </TableCell>
-                  <TableCell>{user.city}</TableCell>
-                  <TableCell>
-                    <Badge>{user.language.toUpperCase()}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    {formatDistanceToNow(new Date(user.createdAt), { addSuffix: true })}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setViewUserId(user.id)}>
-                        View
-                      </Button>
-                      <Button
-  size="sm"
-  variant={user.isSuspended ? 'outline' : 'destructive'}
-  onClick={() => {
-    setSuspendUser(user);
-    setSuspensionAction(user.isSuspended ? 'unsuspend' : 'suspend');
-  }}
->
-  {user.isSuspended ? 'Unsuspend' : 'Suspend'}
-</Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {nextCursor ? (
-            <div className="flex justify-center">
-              <Button variant="outline" isLoading={isFetchingMore} onClick={handleLoadMore}>
-                Load more
-              </Button>
-            </div>
-          ) : null}
-        </>
-      )}
+      {content}
 
       {viewUserId ? (
-        <Dialog open onOpenChange={(open) => !open && setViewUserId(null)} title="User Profile">
+        <Dialog
+          open
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setViewUserId(null);
+            }
+          }}
+          title="User Profile"
+        >
           {detailQuery.isLoading || !detailQuery.data ? (
             <div className="flex justify-center py-8">
               <Spinner />
@@ -208,7 +255,8 @@ export default function UsersPage(): React.JSX.Element {
               <div>
                 <p className="text-lg font-semibold text-deep-ink">{detailQuery.data.user.name}</p>
                 <p className="text-sm text-stone">
-                  {detailQuery.data.user.city} · {detailQuery.data.user.language.toUpperCase()}
+                  {detailQuery.data.user.city} &middot;{' '}
+                  {detailQuery.data.user.language.toUpperCase()}
                 </p>
               </div>
               {detailQuery.data.user.isSuspended ? <Badge variant="error">Suspended</Badge> : null}
@@ -228,29 +276,31 @@ export default function UsersPage(): React.JSX.Element {
       ) : null}
 
       {suspendUser ? (
-  <AlertDialog
-    open
-    onOpenChange={(open) => !open && setSuspendUser(null)}
-    title={
-      suspensionAction === 'suspend'
-        ? `Suspend ${suspendUser.name}?`
-        : `Unsuspend ${suspendUser.name}?`
-    }
-    description={
-      suspensionAction === 'suspend'
-        ? 'They will no longer be able to sign in to the app.'
-        : 'They will be able to access their account again.'
-    }
-    confirmLabel={suspensionAction === 'suspend' ? 'Suspend' : 'Unsuspend'}
-    isLoading={suspendMutation.isPending}
-    onConfirm={() =>
-      suspendMutation.mutate({
-        uid: suspendUser.id,
-        action: suspensionAction,
-      })
-    }
-  />
-) : null}
+        <AlertDialog
+          open
+          onOpenChange={(open: boolean): void => {
+            if (!open) {
+              setSuspendUser(null);
+            }
+          }}
+          title={
+            suspensionAction === 'suspend'
+              ? `Suspend ${suspendUser.name}?`
+              : `Unsuspend ${suspendUser.name}?`
+          }
+          description={
+            suspensionAction === 'suspend'
+              ? 'They will no longer be able to sign in to the app.'
+              : 'They will be able to access their account again.'
+          }
+          confirmLabel={suspensionAction === 'suspend' ? 'Suspend' : 'Unsuspend'}
+          confirmVariant={suspensionAction === 'unsuspend' ? 'default' : 'destructive'}
+          isLoading={
+            suspensionAction === 'suspend' ? suspendMutation.isPending : unsuspendMutation.isPending
+          }
+          onConfirm={handleConfirmUserAction}
+        />
+      ) : null}
     </div>
   );
 }

@@ -42,7 +42,7 @@ export default function UsersPage(): React.JSX.Element {
   const debouncedSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS);
   const [viewUserId, setViewUserId] = useState<string | null>(null);
   const [suspendUser, setSuspendUser] = useState<ClientUser | null>(null);
-  const [unsuspendUser, setUnsuspendUser] = useState<ClientUser | null>(null);
+  const [suspensionAction, setSuspensionAction] = useState<'suspend' | 'unsuspend'>('suspend');
 
   const [cursor, setCursor] = useState<string | null>(null);
   const [prevSearch, setPrevSearch] = useState(debouncedSearch);
@@ -87,6 +87,34 @@ export default function UsersPage(): React.JSX.Element {
 
   const handleRetry = (): void => {
     void usersQuery.refetch();
+  };
+
+  const handleSuspendAction = (user: ClientUser): void => {
+    setSuspendUser(user);
+    setSuspensionAction(user.isSuspended ? 'unsuspend' : 'suspend');
+  };
+
+  const handleConfirmUserAction = (): void => {
+    if (!suspendUser) {
+      return;
+    }
+
+    const nextStatus = suspensionAction === 'suspend';
+    const mutationCallback = (): void => {
+      setAccumulatedUsers((prevUsers: ClientUser[]): ClientUser[] =>
+        prevUsers.map((user: ClientUser): ClientUser =>
+          user.id === suspendUser.id ? { ...user, isSuspended: nextStatus } : user,
+        ),
+      );
+      setSuspendUser(null);
+    };
+
+    if (suspensionAction === 'suspend') {
+      suspendMutation.mutate(suspendUser.id, { onSuccess: mutationCallback });
+      return;
+    }
+
+    unsuspendMutation.mutate(suspendUser.id, { onSuccess: mutationCallback });
   };
 
   let content: React.JSX.Element;
@@ -155,23 +183,13 @@ export default function UsersPage(): React.JSX.Element {
                     >
                       View
                     </Button>
-                    {user.isSuspended ? (
-                      <Button
-                        size="sm"
-                        variant="default"
-                        onClick={(): void => setUnsuspendUser(user)}
-                      >
-                        Unsuspend
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={(): void => setSuspendUser(user)}
-                      >
-                        Suspend
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant={user.isSuspended ? 'default' : 'destructive'}
+                      onClick={(): void => handleSuspendAction(user)}
+                    >
+                      {user.isSuspended ? 'Unsuspend' : 'Suspend'}
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -265,50 +283,22 @@ export default function UsersPage(): React.JSX.Element {
               setSuspendUser(null);
             }
           }}
-          title={`Suspend ${suspendUser.name}?`}
-          description="They will no longer be able to sign in to the app."
-          confirmLabel="Suspend"
-          isLoading={suspendMutation.isPending}
-          onConfirm={(): void => {
-            suspendMutation.mutate(suspendUser.id, {
-              onSuccess: (): void => {
-                setAccumulatedUsers((prev: ClientUser[]): ClientUser[] =>
-                  prev.map((u: ClientUser): ClientUser =>
-                    u.id === suspendUser.id ? { ...u, isSuspended: true } : u,
-                  ),
-                );
-                setSuspendUser(null);
-              },
-            });
-          }}
-        />
-      ) : null}
-
-      {unsuspendUser ? (
-        <AlertDialog
-          open
-          onOpenChange={(open: boolean): void => {
-            if (!open) {
-              setUnsuspendUser(null);
-            }
-          }}
-          title={`Unsuspend ${unsuspendUser.name}?`}
-          description="They will be able to sign in to the app again."
-          confirmLabel="Unsuspend"
-          confirmVariant="default"
-          isLoading={unsuspendMutation.isPending}
-          onConfirm={(): void => {
-            unsuspendMutation.mutate(unsuspendUser.id, {
-              onSuccess: (): void => {
-                setAccumulatedUsers((prev: ClientUser[]): ClientUser[] =>
-                  prev.map((u: ClientUser): ClientUser =>
-                    u.id === unsuspendUser.id ? { ...u, isSuspended: false } : u,
-                  ),
-                );
-                setUnsuspendUser(null);
-              },
-            });
-          }}
+          title={
+            suspensionAction === 'suspend'
+              ? `Suspend ${suspendUser.name}?`
+              : `Unsuspend ${suspendUser.name}?`
+          }
+          description={
+            suspensionAction === 'suspend'
+              ? 'They will no longer be able to sign in to the app.'
+              : 'They will be able to access their account again.'
+          }
+          confirmLabel={suspensionAction === 'suspend' ? 'Suspend' : 'Unsuspend'}
+          confirmVariant={suspensionAction === 'unsuspend' ? 'default' : 'destructive'}
+          isLoading={
+            suspensionAction === 'suspend' ? suspendMutation.isPending : unsuspendMutation.isPending
+          }
+          onConfirm={handleConfirmUserAction}
         />
       ) : null}
     </div>

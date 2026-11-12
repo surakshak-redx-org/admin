@@ -67,7 +67,9 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
     const { uid } = await context.params;
     const { action } = (await request.json()) as UserActionBody;
 
-    if (!USER_ACTIONS.includes(action)) return apiError('Invalid action', 400);
+    if (!USER_ACTIONS.includes(action)) {
+      return apiError('Invalid action', 400);
+    }
 
     const ref = adminDb.collection(COLLECTIONS.USERS).doc(uid);
     const doc = await ref.get();
@@ -75,7 +77,11 @@ export async function PATCH(request: NextRequest, context: RouteContext): Promis
 
     const isSuspended = action === 'suspend';
     await ref.update({ isSuspended });
-    return apiOk({ id: uid, isSuspended });
+
+    return apiOk({
+      id: uid,
+      isSuspended,
+    });
   } catch (error) {
     console.error('PATCH /api/users/[uid] failed:', error);
     return apiError('Failed to update user', 500);

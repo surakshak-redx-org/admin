@@ -8,6 +8,7 @@ import { COLLECTIONS } from '@/constants/firestore';
 
 import {
   mockAdminAuth,
+  mockAdminDb,
   resetFirestoreMocks,
   setCollectionDocs,
 } from '../mocks/firebase-admin.mock';
@@ -43,8 +44,24 @@ describe('GET /api/unsafe-areas', () => {
 
   it("attaches each reporter's name instead of leaving only the uid (BUG-020)", async (): Promise<void> => {
     setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
-      { id: 'a1', data: { title: 'Dark lane', reportedBy: 'user-1', status: 'pending' } },
-      { id: 'a2', data: { title: 'Isolated stop', reportedBy: 'user-2', status: 'pending' } },
+      {
+        id: 'a1',
+        data: {
+          title: 'Dark lane',
+          reportedBy: 'user-1',
+          status: 'pending',
+          createdAt: new Date(),
+        },
+      },
+      {
+        id: 'a2',
+        data: {
+          title: 'Isolated stop',
+          reportedBy: 'user-2',
+          status: 'pending',
+          createdAt: new Date(),
+        },
+      },
     ]);
     setCollectionDocs(COLLECTIONS.USERS, [{ id: 'user-1', data: { name: 'Asha Patil' } }]);
 
@@ -54,6 +71,60 @@ describe('GET /api/unsafe-areas', () => {
     expect(response.status).toBe(200);
     expect(json.data?.find((area) => area.id === 'a1')?.reporterName).toBe('Asha Patil');
     expect(json.data?.find((area) => area.id === 'a2')?.reporterName).toBeNull();
+    expect(mockAdminDb.getAll).toHaveBeenCalledTimes(1);
+    expect(mockAdminDb.getAll).toHaveBeenCalledWith(expect.anything(), expect.anything(), {
+      fieldMask: ['name'],
+    });
+  });
+
+  it('returns null when a reporter name is blank', async (): Promise<void> => {
+    setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
+      {
+        id: 'a1',
+        data: {
+          title: 'Dark lane',
+          reportedBy: 'user-1',
+          status: 'pending',
+          createdAt: new Date(),
+        },
+      },
+    ]);
+    setCollectionDocs(COLLECTIONS.USERS, [{ id: 'user-1', data: { name: '   ' } }]);
+
+    const response = await GET(request());
+    const json = (await response.json()) as ApiResponse<AreaRow[]>;
+
+    expect(response.status).toBe(200);
+    expect(json.data?.[0]?.reporterName).toBeNull();
+  });
+
+  it('rejects requests from a user without an admin record', async (): Promise<void> => {
+    setCollectionDocs('admins', []);
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(401);
+  });
+
+  it('returns a safe error when reporter lookup fails', async (): Promise<void> => {
+    setCollectionDocs(COLLECTIONS.UNSAFE_AREAS, [
+      {
+        id: 'a1',
+        data: {
+          title: 'Dark lane',
+          reportedBy: 'user-1',
+          status: 'pending',
+          createdAt: new Date(),
+        },
+      },
+    ]);
+    mockAdminDb.getAll.mockRejectedValueOnce(new Error('lookup failed'));
+
+    const response = await GET(request());
+    const json = (await response.json()) as ApiResponse<AreaRow[]>;
+
+    expect(response.status).toBe(500);
+    expect(json.error).toBe('Failed to fetch unsafe areas');
   });
 });
 

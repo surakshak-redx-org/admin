@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PATCH } from '@/app/api/users/[uid]/route';
+
 import { mockAdminAuth, mockAdminDb, setCollectionDocs } from '../mocks/firebase-admin.mock';
 
 describe('PATCH /api/users/[uid]', () => {
@@ -16,7 +17,10 @@ describe('PATCH /api/users/[uid]', () => {
       email: 'admin@surakshak.in',
     } as unknown as DecodedIdToken);
     setCollectionDocs('admins', [
-      { id: validAdminUid, data: { uid: validAdminUid, email: 'admin@surakshak.in', role: 'admin' } },
+      {
+        id: validAdminUid,
+        data: { uid: validAdminUid, email: 'admin@surakshak.in', role: 'admin' },
+      },
     ]);
   });
 
